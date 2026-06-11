@@ -41,6 +41,17 @@ function getCustomModelIdsForProvider(config, providerType) {
         .map(model => model.id);
 }
 
+const DEFAULT_PROVIDER_WEIGHT = 1;
+const MAX_PROVIDER_WEIGHT = 100;
+
+function getProviderWeight(config) {
+    const parsed = Number(config?.weight);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return DEFAULT_PROVIDER_WEIGHT;
+    }
+    return Math.min(Math.floor(parsed), MAX_PROVIDER_WEIGHT);
+}
+
 /**
  * Manages a pool of API service providers, handling their health and selection.
  */
@@ -628,6 +639,54 @@ export class ProviderPoolManager {
         return baseScore + usageScore + sequenceScore + loadScore + freshBonus;
     }
 
+    _getAvailabilityTier(providerStatus) {
+        const config = providerStatus.config;
+        const state = providerStatus.state;
+        const concurrencyLimit = parseInt(config.concurrencyLimit || 0);
+        const queueLimit = parseInt(config.queueLimit || 0);
+
+        if (concurrencyLimit <= 0 || state.activeCount < concurrencyLimit) {
+            return 0;
+        }
+
+        if (queueLimit > 0 && state.waitingCount < queueLimit) {
+            return 1;
+        }
+
+        return 2;
+    }
+
+    _selectWeightedProvider(candidates, now, minSeqInPool) {
+        const scoredCandidates = candidates.map(provider => ({
+            provider,
+            tier: this._getAvailabilityTier(provider),
+            score: this._calculateNodeScore(provider, now, minSeqInPool),
+            weight: getProviderWeight(provider.config)
+        }));
+
+        const bestTier = Math.min(...scoredCandidates.map(item => item.tier));
+        const tierCandidates = scoredCandidates.filter(item => item.tier === bestTier);
+        const totalWeight = tierCandidates.reduce((sum, item) => sum + item.weight, 0);
+
+        let selected = null;
+        for (const item of tierCandidates) {
+            item.provider.state.weightedCurrent = (item.provider.state.weightedCurrent || 0) + item.weight;
+
+            if (!selected ||
+                item.provider.state.weightedCurrent > selected.provider.state.weightedCurrent ||
+                (
+                    item.provider.state.weightedCurrent === selected.provider.state.weightedCurrent &&
+                    (item.score < selected.score || (item.score === selected.score && item.provider.uuid < selected.provider.uuid))
+                )
+            ) {
+                selected = item;
+            }
+        }
+
+        selected.provider.state.weightedCurrent -= totalWeight;
+        return selected.provider;
+    }
+
     /**
      * 获取指定类型的健康节点数量
      */
@@ -1059,15 +1118,7 @@ export class ProviderPoolManager {
             return null;
         }
 
-        // 改进：使用统一的评分策略进行选择
-        // 传入当前时间戳 now 确保一致性
-        const selected = availableAndHealthyProviders.sort((a, b) => {
-            const scoreA = this._calculateNodeScore(a, now, minSeq);
-            const scoreB = this._calculateNodeScore(b, now, minSeq);
-            if (scoreA !== scoreB) return scoreA - scoreB;
-            // 如果分值相同，使用 UUID 排序确保确定性
-            return a.uuid < b.uuid ? -1 : 1;
-        })[0];
+        const selected = this._selectWeightedProvider(availableAndHealthyProviders, now, minSeq);
 
         // 始终更新 lastUsed（确保 LRU 策略生效，避免并发请求选到同一个 provider）
         // usageCount 只在请求成功后才增加（由 skipUsageCount 控制）

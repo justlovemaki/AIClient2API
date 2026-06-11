@@ -8,6 +8,12 @@ const PROVIDER_BOOLEAN_CONFIG_FIELDS = [
     'TLS_SIDECAR_ENABLED'
 ];
 
+const PROVIDER_POSITIVE_INTEGER_CONFIG_FIELDS = [
+    'weight'
+];
+
+const PROVIDER_WEIGHT_MAX = 100;
+
 function normalizeStringArrayConfigValue(value) {
     if (Array.isArray(value)) {
         return value
@@ -64,6 +70,14 @@ function normalizeBooleanConfigValue(value) {
     return Boolean(value);
 }
 
+function normalizePositiveIntegerConfigValue(value, fallback = 1, max = Infinity) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return fallback;
+    }
+    return Math.min(Math.floor(parsed), max);
+}
+
 /**
  * Provider edit UI renders unknown provider fields as text inputs. If root-level
  * proxy/TLS settings are stored on a provider node, arrays and booleans can
@@ -83,6 +97,12 @@ export function normalizeProviderConfigFields(data) {
     for (const key of PROVIDER_BOOLEAN_CONFIG_FIELDS) {
         if (Object.prototype.hasOwnProperty.call(result, key)) {
             result[key] = normalizeBooleanConfigValue(result[key]);
+        }
+    }
+
+    for (const key of PROVIDER_POSITIVE_INTEGER_CONFIG_FIELDS) {
+        if (Object.prototype.hasOwnProperty.call(result, key)) {
+            result[key] = normalizePositiveIntegerConfigValue(result[key], 1, PROVIDER_WEIGHT_MAX);
         }
     }
 

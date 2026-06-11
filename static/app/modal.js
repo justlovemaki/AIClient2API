@@ -8,6 +8,8 @@ const MANAGED_MODEL_LIST_PROVIDERS = new Set(['openai-custom', 'openaiResponses-
 
 // 分页配置
 const PROVIDERS_PER_PAGE = 5;
+const DEFAULT_PROVIDER_WEIGHT = 1;
+const MAX_PROVIDER_WEIGHT = 100;
 let currentPage = 1;
 let currentProviders = [];
 let currentProviderType = '';
@@ -44,6 +46,14 @@ function parseModelsData(rawValue = '') {
         console.warn('Failed to parse models data:', error);
         return [];
     }
+}
+
+function normalizeProviderWeightInput(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return DEFAULT_PROVIDER_WEIGHT;
+    }
+    return Math.min(Math.floor(parsed), MAX_PROVIDER_WEIGHT);
 }
 
 function renderSupportedModelsValue(models = []) {
@@ -136,6 +146,8 @@ function collectDraftProviderConfig(providerDetail, providerType, uuid) {
         let value = input.value;
         if (key === 'concurrencyLimit' || key === 'queueLimit') {
             value = parseInt(value || '0', 10);
+        } else if (key === 'weight') {
+            value = normalizeProviderWeightInput(value);
         }
         providerConfig[key] = value;
     });
@@ -859,6 +871,7 @@ function renderProviderDetailList(providers) {
         const toggleButtonIcon = isDisabled ? 'fas fa-play' : 'fas fa-ban';
         const toggleButtonClass = isDisabled ? 'btn-success' : 'btn-warning';
         const needsRefresh = !!provider.needsRefresh;
+        const providerWeight = normalizeProviderWeightInput(provider.weight);
         
         // 构建错误信息显示
         let errorInfoHtml = '';
@@ -890,6 +903,7 @@ function renderProviderDetailList(providers) {
                                 <i class="${disabledIcon}"></i>
                                 <span data-i18n="upload.detail.status">状态</span>: <span data-i18n="${isDisabled ? 'modal.provider.status.disabled' : 'modal.provider.status.enabled'}">${disabledText}</span>
                             </span> |
+                            <span data-i18n="modal.provider.weight">权重</span>: ${providerWeight} |
                             <span data-i18n="modal.provider.usageCount">使用次数</span>: ${provider.usageCount || 0} |
                             <span data-i18n="modal.provider.errorCount">失败次数</span>: ${provider.errorCount || 0} |
                             <span data-i18n="modal.provider.lastUsed">最后使用</span>: ${lastUsed}
@@ -948,6 +962,7 @@ function renderProviderCardList(providers) {
         const disabledClass = isDisabled ? 'disabled' : '';
         const displayName = provider.customName || provider.uuid;
         const needsRefresh = !!provider.needsRefresh;
+        const providerWeight = normalizeProviderWeightInput(provider.weight);
         const toggleButtonText = isDisabled ? t('modal.provider.enabled') : t('modal.provider.disabled');
         const toggleButtonIcon = isDisabled ? 'fas fa-play' : 'fas fa-ban';
         const toggleButtonClass = isDisabled ? 'btn-success' : 'btn-warning';
@@ -967,6 +982,10 @@ function renderProviderCardList(providers) {
                     <div class="card-stat" title="${t('modal.provider.errorCount')}: ${provider.errorCount || 0}">
                         <i class="fas fa-exclamation-circle"></i>
                         <span>${provider.errorCount || 0}</span>
+                    </div>
+                    <div class="card-stat" title="${t('modal.provider.weight')}: ${providerWeight}">
+                        <i class="fas fa-weight-hanging"></i>
+                        <span>${providerWeight}</span>
                     </div>
                 </div>
                 <div class="card-actions" onclick="event.stopPropagation()">
@@ -1014,16 +1033,20 @@ function renderProviderConfig(provider) {
     
     // 先渲染基础配置字段（customName、checkModelName 和 checkHealth）
     let html = '<div class="form-grid">';
-    const baseFields = ['customName', 'checkModelName', 'checkHealth', 'concurrencyLimit', 'queueLimit'];
+    const baseFields = ['customName', 'checkModelName', 'checkHealth', 'concurrencyLimit', 'queueLimit', 'weight'];
     
     baseFields.forEach(fieldKey => {
         const displayLabel = getFieldLabel(fieldKey);
         const value = provider[fieldKey];
-        const displayValue = (value !== undefined && value !== null) ? value : '';
+        const displayValue = fieldKey === 'weight'
+            ? normalizeProviderWeightInput(value)
+            : ((value !== undefined && value !== null) ? value : '');
         
         // 查找字段定义以获取 placeholder
         const fieldDef = fieldConfigs.find(f => f.id === fieldKey) || fieldConfigs.find(f => f.id.toUpperCase() === fieldKey.toUpperCase()) || {};
-        const placeholder = fieldDef.placeholder || (fieldKey === 'customName' ? '节点自定义名称' : (fieldKey === 'checkModelName' ? '例如: gpt-3.5-turbo' : (fieldKey === 'concurrencyLimit' ? '最大并发, 默认0不限制' : (fieldKey === 'queueLimit' ? '最大队列, 默认0不限制' : ''))));
+        const placeholder = fieldDef.placeholder || (fieldKey === 'customName' ? '节点自定义名称' : (fieldKey === 'checkModelName' ? '例如: gpt-3.5-turbo' : (fieldKey === 'concurrencyLimit' ? '最大并发, 默认0不限制' : (fieldKey === 'queueLimit' ? '最大队列, 默认0不限制' : (fieldKey === 'weight' ? '默认1，最高100' : '')))));
+        const inputType = fieldKey === 'weight' ? 'number' : 'text';
+        const inputAttributes = fieldKey === 'weight' ? ' min="1" max="100" step="1"' : '';
         
         // 如果是 customName 字段，使用普通文本输入框
         if (fieldKey === 'customName') {
@@ -1059,11 +1082,12 @@ function renderProviderConfig(provider) {
             html += `
                 <div class="config-item">
                     <label>${displayLabel}</label>
-                    <input type="text"
+                    <input type="${inputType}"
                            value="${displayValue}"
                            readonly
                            data-config-key="${fieldKey}"
-                           data-config-value="${(value !== undefined && value !== null) ? value : ''}"
+                           data-config-value="${displayValue}"
+                           ${inputAttributes}
                            placeholder="${placeholder}">
                 </div>
             `;
@@ -1241,7 +1265,7 @@ function renderProviderConfig(provider) {
  * @returns {Array} 字段名数组
  */
 function getFieldOrder(provider) {
-    const orderedFields = ['customName', 'checkModelName', 'checkHealth', 'concurrencyLimit', 'queueLimit'];
+    const orderedFields = ['customName', 'checkModelName', 'checkHealth', 'concurrencyLimit', 'queueLimit', 'weight'];
     
     // 需要排除的内部状态字段
     const excludedFields = [
@@ -1645,6 +1669,10 @@ function showAddProviderForm(providerType) {
                 <label><span data-i18n="modal.provider.queueLimit">队列限制</span> <span class="optional-mark" data-i18n="config.optional">(选填)</span></label>
                 <input type="number" id="newQueueLimit" placeholder="默认0不限制">
             </div>
+            <div class="form-group">
+                <label><span data-i18n="modal.provider.weight">权重</span></label>
+                <input type="number" id="newWeight" min="1" max="100" step="1" value="1" placeholder="默认1，最高100">
+            </div>
         </div>
         <div id="dynamicConfigFields">
             <!-- 动态配置字段将在这里显示 -->
@@ -1682,7 +1710,7 @@ function addDynamicConfigFields(form, providerType) {
     const allFields = getProviderTypeFields(providerType);
     
     // 过滤掉已经在 form-grid 中硬编码显示的五个基础字段，避免重复
-    const baseFields = ['customName', 'checkModelName', 'checkHealth', 'concurrencyLimit', 'queueLimit'];
+    const baseFields = ['customName', 'checkModelName', 'checkHealth', 'concurrencyLimit', 'queueLimit', 'weight'];
     const filteredFields = allFields.filter(f => !baseFields.some(bf => f.id.toLowerCase().includes(bf.toLowerCase())));
 
     let fields = '';
@@ -1822,13 +1850,15 @@ async function addProvider(providerType) {
     const checkHealth = document.getElementById('newCheckHealth')?.value === 'true';
     const concurrencyLimit = parseInt(document.getElementById('newConcurrencyLimit')?.value || '0');
     const queueLimit = parseInt(document.getElementById('newQueueLimit')?.value || '0');
+    const weight = normalizeProviderWeightInput(document.getElementById('newWeight')?.value);
     
     const providerConfig = {
         customName: customName || '', // 允许为空
         checkModelName: checkModelName || '', // 允许为空
         checkHealth,
         concurrencyLimit,
-        queueLimit
+        queueLimit,
+        weight
     };
     
     // 根据提供商类型动态收集配置字段（自动匹配 utils.js 中的定义）
