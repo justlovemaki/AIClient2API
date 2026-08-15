@@ -753,6 +753,7 @@ export class GrokCliApiServiceAdapter extends ApiServiceAdapter {
 registerAdapter(MODEL_PROVIDER.QINIU, OpenAIApiServiceAdapter);
 registerAdapter(MODEL_PROVIDER.FENNO, OpenAIApiServiceAdapter);
 registerAdapter(MODEL_PROVIDER.ATLASCLOUD, OpenAIApiServiceAdapter);
+registerAdapter(MODEL_PROVIDER.ORCAROUTER, OpenAIApiServiceAdapter);
 registerAdapter(MODEL_PROVIDER.OPENAI_CUSTOM, OpenAIApiServiceAdapter);
 registerAdapter(MODEL_PROVIDER.OPENAI_CUSTOM_RESPONSES, OpenAIResponsesApiServiceAdapter);
 registerAdapter(MODEL_PROVIDER.CLAUDE_CUSTOM, ClaudeApiServiceAdapter);

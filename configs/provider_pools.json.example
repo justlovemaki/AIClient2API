@@ -50,6 +50,23 @@
       "lastErrorTime": null
     }
   ],
+  "orcarouter": [
+    {
+      "customName": "OrcaRouter节点1",
+      "OPENAI_API_KEY": "sk-orca-key1",
+      "OPENAI_BASE_URL": "https://api.orcarouter.ai/v1",
+      "checkModelName": null,
+      "checkHealth": false,
+      "notSupportedModels": [],
+      "uuid": "7f579c65-d3c5-41b1-9985-9f6e3d7bf3a0",
+      "isHealthy": true,
+      "isDisabled": false,
+      "lastUsed": null,
+      "usageCount": 0,
+      "errorCount": 0,
+      "lastErrorTime": null
+    }
+  ],
   "openai-custom": [
     {
       "customName": "OpenAI节点1",

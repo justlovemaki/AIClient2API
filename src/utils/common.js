@@ -525,7 +525,8 @@ export function getProtocolPrefix(provider) {
     // Special cases for OpenAI-compatible dedicated providers.
     if (provider === 'atlascloud' || provider.startsWith('atlascloud-') ||
         provider === 'qiniu' || provider.startsWith('qiniu-') ||
-        provider === 'fenno' || provider.startsWith('fenno-')) {
+        provider === 'fenno' || provider.startsWith('fenno-') ||
+        provider === 'orcarouter' || provider.startsWith('orcarouter-')) {
         return MODEL_PROTOCOL_PREFIX.OPENAI;
     }
 

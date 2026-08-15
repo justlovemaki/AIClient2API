@@ -26,11 +26,17 @@ function getBaseProviderConfigs() {
             icon: 'fa-code',
             registerUrl: 'https://api.fenno.ai/register?redirect=/purchase?tab=subscription%26group=16&aff=2EW65KEQC938'
         },
-        { 
-            id: 'atlascloud', 
-            name: 'AtlasCloud', 
+        {
+            id: 'atlascloud',
+            name: 'AtlasCloud',
             icon: 'fa-cloud',
             registerUrl: 'https://www.atlascloud.ai/console/coding-plan'
+        },
+        {
+            id: 'orcarouter',
+            name: 'OrcaRouter',
+            icon: 'fa-cloud',
+            registerUrl: 'https://www.orcarouter.ai/console'
         },
         { 
             id: 'forward-api', 
@@ -302,6 +308,20 @@ function getProviderTypeFields(providerType) {
                 label: 'OpenAI Base URL',
                 type: 'text',
                 placeholder: 'https://api.atlascloud.ai/v1'
+            }
+        ],
+        'orcarouter': [
+            {
+                id: 'OPENAI_API_KEY',
+                label: t('modal.provider.field.apiKey'),
+                type: 'password',
+                placeholder: 'sk-orca-...'
+            },
+            {
+                id: 'OPENAI_BASE_URL',
+                label: 'OpenAI Base URL',
+                type: 'text',
+                placeholder: 'https://api.orcarouter.ai/v1'
             }
         ],
         'qiniu': [
