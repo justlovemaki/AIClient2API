@@ -28,7 +28,7 @@ import * as crypto from 'crypto';
 import { configureAxiosProxy } from '../../utils/proxy-utils.js';
 import { isRetryableNetworkError, MODEL_PROVIDER, formatExpiryLog, getRetryAfterMs } from '../../utils/common.js';
 import { getProviderPoolManager } from '../../services/service-manager.js';
-import { getProviderModels } from '../provider-models.js';
+import { getProviderModels, IFLOW_MANUAL_MODELS } from '../provider-models.js';
 
 // iFlow API 端点
 const IFLOW_API_BASE_URL = 'https://apis.iflow.cn/v1';
@@ -1118,7 +1118,7 @@ export class IFlowApiService {
         }
         
         // 需要手动添加的模型列表
-        const manualModels = ['glm-4.7', 'glm-5', 'kimi-k2.5', 'minimax-m2.1', 'minimax-m2.5'];
+        const manualModels = IFLOW_MANUAL_MODELS;
         
         try {
             const response = await this.axiosInstance.get('/models', {

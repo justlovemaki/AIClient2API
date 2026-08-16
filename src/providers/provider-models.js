@@ -2,6 +2,16 @@ import { convertData } from '../convert/convert.js';
 import { MODEL_PROVIDER } from '../utils/common.js';
 import { CONFIG } from '../core/config-manager.js';
 
+export const IFLOW_MANUAL_MODELS = [
+    'glm-4.7',
+    'glm-5',
+    'kimi-k2.5',
+    'MiniMax-M3',
+    'MiniMax-M2.7',
+    'minimax-m2.1',
+    'minimax-m2.5'
+];
+
 /**
  * 获取模型配置元数据
  * @param {string} modelId - 模型 ID 或别名
@@ -119,11 +129,7 @@ export const PROVIDER_MODELS = {
         'deepseek-r1',
         'deepseek-v3',
         // 手动定义
-        'glm-4.7',
-        'glm-5',
-        'kimi-k2.5',
-        'minimax-m2.1',
-        'minimax-m2.5',
+        ...IFLOW_MANUAL_MODELS,
     ],
     'openai-codex-oauth': [
         'gpt-5.3-codex-spark',
