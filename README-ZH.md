@@ -869,7 +869,7 @@ OAuth 令牌（如 Gemini, Antigravity, Codex）通常有一定的有效期（�
 ### 🌟 Star History
 
 
-[![Star History Chart](https://api.star-history.com/svg?repos=justlovemaki/AIClient-2-API&type=Timeline)](https://www.star-history.com/#justlovemaki/AIClient-2-API&Timeline)
+[![Star History Chart](https://star-history.dera.page/svg?repos=justlovemaki/AIClient-2-API&type=Timeline)](https://star-history.dera.page/#justlovemaki/AIClient-2-API&Timeline)
 
 ---
 
