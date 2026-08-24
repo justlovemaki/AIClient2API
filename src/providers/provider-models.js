@@ -36,6 +36,36 @@ export function getCustomModelConfig(modelId, provider = null) {
 }
 
 /**
+ * 获取所有匹配的自定义模型配置（多候选路由用）
+ */
+export function getAllCustomModelConfigs(modelId, provider = null) {
+    if (!CONFIG.customModels || !Array.isArray(CONFIG.customModels)) {
+        return [];
+    }
+
+    let targetProvider = provider && provider !== MODEL_PROVIDER.AUTO ? provider : null;
+    let targetModelId = modelId;
+
+    if (typeof modelId === 'string' && modelId.includes(':')) {
+        const [prefix, ...modelParts] = modelId.split(':');
+        targetProvider = prefix;
+        targetModelId = modelParts.join(':');
+    }
+
+    if (!targetProvider) {
+        return CONFIG.customModels.filter(m =>
+            !m.provider &&
+            (m.id === targetModelId || m.alias === targetModelId)
+        );
+    }
+
+    return CONFIG.customModels.filter(m =>
+        // m.provider === targetProvider &&
+        (m.id === targetModelId || m.alias === targetModelId)
+    );
+}
+
+/**
  * 各提供商支持的模型列表
  * 用于前端UI选择不支持的模型
  */

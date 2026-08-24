@@ -333,6 +333,7 @@ import {
     usesManagedModelList,
     getConfiguredSupportedModels,
     getCustomModelConfig,
+    getAllCustomModelConfigs,
     getCustomModelActualProvider,
     getCustomModelListProvider,
     normalizeModelIds
@@ -1713,22 +1714,78 @@ export async function handleContentGenerationRequest(req, res, service, endpoint
         throw new Error("Could not determine the model from the request.");
     }
     
-    // 2.1. 处理自定义模型映射和别名
-    const customModelConfig = getCustomModelConfig(model, CONFIG.MODEL_PROVIDER);
-    CONFIG.customConfig = customModelConfig || null;
-    if (customModelConfig) {
-        const customRouting = resolveCustomModelRouting(model, CONFIG.MODEL_PROVIDER, customModelConfig);
-        logger.info(`[Custom Model] Resolved '${model}' to actual model '${customRouting.actualModel}'`);
-        
-        if (customRouting.actualProvider && customRouting.actualProvider !== CONFIG.MODEL_PROVIDER) {
-            CONFIG.MODEL_PROVIDER = customRouting.actualProvider;
-            toProvider = customRouting.actualProvider;
+    // 2.1. 多候选模型路由：从 customModels + 直接支持中，按节点优先级选出最优路径
+    const allCustomConfigs = getAllCustomModelConfigs(model, CONFIG.MODEL_PROVIDER);
+    let selectedRouting = null;
+    let selectedCustomConfig = null;
+    let routeResolved = false;
+
+    if (allCustomConfigs.length > 0 && providerPoolManager) {
+        // 收集所有健康候选及其对应节点的最高优先级
+        const candidates = [];
+        for (const cfg of allCustomConfigs) {
+            const routing = resolveCustomModelRouting(model, CONFIG.MODEL_PROVIDER, cfg);
+            const targetProvider = routing.actualProvider;
+            const targetModel = routing.actualModel;
+            const priority = providerPoolManager.getBestPriorityForModel(targetProvider, targetModel);
+
+            if (priority === null) {
+                logger.info(`[Custom Model] Candidate '${cfg.id || cfg.alias}' -> ${targetProvider}:${targetModel} skipped (no healthy provider)`);
+                continue;
+            }
+            candidates.push({ routing, cfg, priority, isDirect: false });
+        }
+
+        // 直接支持的 provider 也参与优先级比较
+        const directPriority = providerPoolManager.getBestPriorityForModel(CONFIG.MODEL_PROVIDER, model);
+        if (directPriority !== null) {
+            candidates.push({ routing: null, cfg: null, priority: directPriority, isDirect: true });
+        }
+
+        // 按 priority 升序排序（数值越小优先级越高）
+        if (candidates.length > 0) {
+            candidates.sort((a, b) => a.priority - b.priority);
+            const best = candidates[0];
+            selectedRouting = best.routing;
+            selectedCustomConfig = best.cfg;
+            routeResolved = true;
+            if (!best.isDirect) {
+                logger.info(`[Custom Model] Selected '${best.cfg.id || best.cfg.alias}' -> ${best.routing.actualProvider}:${best.routing.actualModel} (priority: ${best.priority})`);
+            } else {
+                logger.info(`[Custom Model] Selected direct support: ${CONFIG.MODEL_PROVIDER}:${model} (priority: ${best.priority})`);
+            }
+        }
+    }
+
+    // 所有候选都不可用时，检查 currentProvider 直接支持该 model（兜底）
+    if (!routeResolved && providerPoolManager) {
+        if (providerPoolManager.hasHealthyProviderForModel(CONFIG.MODEL_PROVIDER, model)) {
+            selectedRouting = null;
+            selectedCustomConfig = null;
+            routeResolved = true;
+            logger.info(`[Custom Model] Fallback to direct support: ${CONFIG.MODEL_PROVIDER}:${model}`);
+        }
+    }
+
+    // 非号池模式保持原有行为：取第一个 customModel
+    if (!providerPoolManager && allCustomConfigs.length > 0) {
+        selectedCustomConfig = allCustomConfigs[0];
+        selectedRouting = resolveCustomModelRouting(model, CONFIG.MODEL_PROVIDER, selectedCustomConfig);
+    }
+
+    // 应用选中的路由
+    CONFIG.customConfig = selectedCustomConfig || null;
+    if (selectedRouting && selectedRouting.isCustomModel) {
+        logger.info(`[Custom Model] Resolved '${model}' to actual model '${selectedRouting.actualModel}'`);
+
+        if (selectedRouting.actualProvider && selectedRouting.actualProvider !== CONFIG.MODEL_PROVIDER) {
+            CONFIG.MODEL_PROVIDER = selectedRouting.actualProvider;
+            toProvider = selectedRouting.actualProvider;
             logger.info(`[Custom Model] Switched provider to '${CONFIG.MODEL_PROVIDER}' based on custom model config`);
         }
 
-        // 映射到实际模型 ID
-        if (customRouting.actualModel) {
-            model = customRouting.actualModel;
+        if (selectedRouting.actualModel) {
+            model = selectedRouting.actualModel;
         }
     }
 
@@ -1807,8 +1864,8 @@ export async function handleContentGenerationRequest(req, res, service, endpoint
     const promptText = extractPromptText(processedRequestBody, toProvider);
     
     // 4.1. 应用自定义模型参数 (温度、最大长度等)
-    if (customModelConfig) {
-        _applyCustomModelParameters(processedRequestBody, customModelConfig, toProvider);
+    if (selectedCustomConfig) {
+        _applyCustomModelParameters(processedRequestBody, selectedCustomConfig, toProvider);
     }
 
     await logConversation('input', promptText, CONFIG.PROMPT_LOG_MODE, PROMPT_LOG_FILENAME);

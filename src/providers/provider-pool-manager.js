@@ -593,14 +593,18 @@ export class ProviderPoolManager {
     _calculateNodeScore(providerStatus, now = Date.now(), minSeqInPool = -1) {
         const config = providerStatus.config;
         const state = providerStatus.state;
-        
+
+        // 0. 优先级分层：priority 越小越优先，未配置默认 Infinity
+        // 使用 1e16 作为每个优先级层的间隔，确保低优先级节点不会因其他因子超越高优先级节点
+        const priorityScore = (config.priority ?? Infinity) * 1e16;
+
         // 1. 基础健康分：不健康的排最后
         if (!config.isHealthy || config.isDisabled) return 1e18;
-        
+
         // 检查并发限制
         const concurrencyLimit = parseInt(config.concurrencyLimit || 0);
         const queueLimit = parseInt(config.queueLimit || 0);
-        
+
         if (concurrencyLimit > 0) {
             if (state.activeCount >= concurrencyLimit) {
                 // 如果队列也满了，排在最后（但优于不健康节点）
@@ -608,24 +612,23 @@ export class ProviderPoolManager {
                     return 1e17;
                 }
                 // 没满，但需要排队。排队数量越多，权重越大
-                return 1e15 + (state.waitingCount || 0) * 1e10;
+                return priorityScore + 1e15 + (state.waitingCount || 0) * 1e10;
             }
         }
-        
+
         // 2. 预热/新鲜度判断
         const lastHealthCheckTime = config.lastHealthCheckTime ? new Date(config.lastHealthCheckTime).getTime() : 0;
         const isFresh = lastHealthCheckTime && (now - lastHealthCheckTime < 60000);
 
         // 3. 计算统一评分
-        // 基础分：新鲜节点使用固定负偏移 (-1e14)，普通节点使用上次使用时间 (约 1.7e12)
         const lastUsedTime = config.lastUsed ? new Date(config.lastUsed).getTime() : (now - 86400000);
         const baseScore = isFresh ? -1e14 : lastUsedTime;
 
-        // 惩罚项 A: 使用次数 (每多用一次增加 10 秒权重)
+        // 惩罚项 A: 使用次数
         const usageCount = config.usageCount || 0;
         const usageScore = usageCount * 10000;
 
-        // 惩罚项 B: 相对序列号 (用于打破平局，确保轮询)
+        // 惩罚项 B: 相对序列号
         const lastSelectionSeq = config._lastSelectionSeq || 0;
         if (minSeqInPool === -1) {
             const pool = this.providerStatus[providerStatus.type] || [];
@@ -635,13 +638,13 @@ export class ProviderPoolManager {
         const cappedRelativeSeq = Math.min(relativeSeq, 100);
         const sequenceScore = cappedRelativeSeq * 1000;
 
-        // 惩罚项 C: 负载 (每个活跃请求增加 5 秒权重)
+        // 惩罚项 C: 负载
         const loadScore = (state.activeCount || 0) * 5000;
 
-        // 新鲜节点的微调：配合 usageScore 和 sequenceScore 在多个新鲜节点间轮询
+        // 新鲜节点的微调
         const freshBonus = isFresh ? (now - lastHealthCheckTime) : 0;
 
-        return baseScore + usageScore + sequenceScore + loadScore + freshBonus;
+        return priorityScore + baseScore + usageScore + sequenceScore + loadScore + freshBonus;
     }
 
     /**
@@ -649,6 +652,64 @@ export class ProviderPoolManager {
      */
     getHealthyCount(providerType) {
         return (this.providerStatus[providerType] || []).filter(p => p.config.isHealthy && !p.config.isDisabled).length;
+    }
+
+    /**
+     * 判断指定 provider 是否有健康节点支持指定模型（只读检查，不更新状态）
+     */
+    hasHealthyProviderForModel(providerType, requestedModel) {
+        const availableProviders = this.providerStatus[providerType] || [];
+        if (availableProviders.length === 0) return false;
+
+        this._checkAndRecoverScheduledProviders(providerType);
+
+        const healthyProviders = availableProviders.filter(p =>
+            p.config.isHealthy && !p.config.isDisabled && !p.config.needsRefresh
+        );
+
+        if (healthyProviders.length === 0) return false;
+        if (!requestedModel) return true;
+
+        return healthyProviders.some(p => {
+            const supportedModels = getConfiguredSupportedModels(providerType, p.config);
+            if (supportedModels.length > 0) {
+                return supportedModels.includes(requestedModel);
+            }
+            if (!p.config.notSupportedModels || !Array.isArray(p.config.notSupportedModels)) {
+                return true;
+            }
+            return !p.config.notSupportedModels.includes(requestedModel);
+        });
+    }
+
+    /**
+     * 获取指定 provider 类型下，支持指定模型的健康节点中最高优先级值（数值最小）
+     * 返回 null 表示无可用节点；Infinity 表示有可用节点但均未配置 priority（最低优先级）
+     */
+    getBestPriorityForModel(providerType, requestedModel) {
+        const availableProviders = this.providerStatus[providerType] || [];
+        if (availableProviders.length === 0) return null;
+
+        const healthyProviders = availableProviders.filter(p =>
+            p.config.isHealthy && !p.config.isDisabled && !p.config.needsRefresh
+        );
+
+        let candidates = healthyProviders;
+        if (requestedModel) {
+            candidates = healthyProviders.filter(p => {
+                const supportedModels = getConfiguredSupportedModels(providerType, p.config);
+                if (supportedModels.length > 0) {
+                    return supportedModels.includes(requestedModel);
+                }
+                if (!p.config.notSupportedModels || !Array.isArray(p.config.notSupportedModels)) {
+                    return true;
+                }
+                return !p.config.notSupportedModels.includes(requestedModel);
+            });
+        }
+
+        if (candidates.length === 0) return null;
+        return Math.min(...candidates.map(p => p.config.priority ?? Infinity));
     }
 
     /**
