@@ -1,6 +1,23 @@
 // 多语言配置
 const translations = {
     'zh-CN': {
+        // Extra UI modal buttons
+        'modal.provider.resetAllHealthBtn': '重置为健康',
+        'modal.provider.checkUnhealthyBtn': '检测不健康',
+        'modal.provider.resetHealthTitle': '将所有节点的健康状态重置为健康',
+        'modal.provider.healthCheckTitle': '对不健康节点执行健康检测',
+        'modal.provider.refreshUnhealthyUuidsTitle': '刷新不健康节点的UUID',
+        'modal.provider.deleteUnhealthyTitle': '删除不健康节点',
+        'modal.provider.customNamePlaceholder': '例如: 我的节点1',
+        'modal.provider.checkModelPlaceholder': '例如: claude-haiku-4-5',
+        'modal.provider.concurrencyPlaceholder': '默认0不限制',
+        'modal.provider.queuePlaceholder': '默认0不限制',
+        'modal.provider.loadModelsFailed': '加载模型列表失败',
+        'config.apiKeyPlaceholder': '请输入 API 密钥',
+        'config.intervalPlaceholder': '毫秒 (ms)',
+        'customModels.namePlaceholder': '例如: 我的模型',
+        'plugins.market.urlPlaceholder': '输入远程 market.json 地址 (可选)',
+        'upload.action.quickLink': '一键关联到',
         // Header
         'header.title': 'AIClient2API 管理控制台',
         'header.description': 'AIClient2API 管理控制台 - 统一管理 AI 服务提供商',
@@ -1209,6 +1226,23 @@ const translations = {
         'login.loggingIn': '登录中...',
     },
     'en-US': {
+        // Extra UI modal buttons
+        'modal.provider.resetAllHealthBtn': 'Reset Health',
+        'modal.provider.checkUnhealthyBtn': 'Check Unhealthy',
+        'modal.provider.resetHealthTitle': 'Reset all nodes health status to healthy',
+        'modal.provider.healthCheckTitle': 'Perform health check on unhealthy nodes',
+        'modal.provider.refreshUnhealthyUuidsTitle': 'Refresh UUIDs of unhealthy nodes',
+        'modal.provider.deleteUnhealthyTitle': 'Delete unhealthy nodes',
+        'modal.provider.customNamePlaceholder': 'e.g.: My Node 1',
+        'modal.provider.checkModelPlaceholder': 'e.g.: claude-haiku-4-5',
+        'modal.provider.concurrencyPlaceholder': '0 = unlimited',
+        'modal.provider.queuePlaceholder': '0 = unlimited',
+        'modal.provider.loadModelsFailed': 'Failed to load models list',
+        'config.apiKeyPlaceholder': 'Enter API key',
+        'config.intervalPlaceholder': 'Milliseconds (ms)',
+        'customModels.namePlaceholder': 'e.g. My Model',
+        'plugins.market.urlPlaceholder': 'Enter remote market.json URL (optional)',
+        'upload.action.quickLink': 'Quick link to',
         // Header
         'header.title': 'AIClient2API Management Console',
         'header.description': 'AIClient2API Management Console - Unified management of AI service providers',
@@ -2419,7 +2453,18 @@ const translations = {
 };
 
 // 当前语言
-let currentLanguage = localStorage.getItem('language') || 'zh-CN';
+function getDefaultLanguage() {
+    try {
+        const saved = localStorage.getItem('language');
+        if (saved) return saved;
+        const browserLang = (typeof navigator !== 'undefined' && (navigator.language || navigator.userLanguage) || '').toLowerCase();
+        if (browserLang.startsWith('zh')) return 'zh-CN';
+        return 'en-US';
+    } catch (e) {
+        return 'en-US';
+    }
+}
+let currentLanguage = getDefaultLanguage();
 
 // 获取翻译文本
 export function t(key, params = {}) {

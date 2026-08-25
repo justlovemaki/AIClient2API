@@ -433,11 +433,11 @@ function showProviderManagerModal(data, initialSearchTerm = '') {
                         <button class="btn btn-success" onclick="window.showAddProviderForm('${providerType}')">
                             <i class="fas fa-plus"></i> <span data-i18n="modal.provider.add">添加新提供商</span>
                         </button>
-                        <button class="btn btn-warning" onclick="window.resetAllProvidersHealth('${providerType}')" data-i18n="modal.provider.resetHealth" title="将所有节点的健康状态重置为健康">
-                            <i class="fas fa-heartbeat"></i> 重置为健康
+                        <button class="btn btn-warning" onclick="window.resetAllProvidersHealth('${providerType}')" data-i18n-title="modal.provider.resetHealthTitle" title="${t('modal.provider.resetHealthTitle') || 'Reset all node health status'}">
+                            <i class="fas fa-heartbeat"></i> <span data-i18n="modal.provider.resetAllHealthBtn">${t('modal.provider.resetAllHealthBtn') || 'Reset Health'}</span>
                         </button>
-                        <button class="btn btn-info" onclick="window.performHealthCheck('${providerType}')" data-i18n="modal.provider.healthCheck" title="对不健康节点执行健康检测">
-                            <i class="fas fa-stethoscope"></i> 检测不健康
+                        <button class="btn btn-info" onclick="window.performHealthCheck('${providerType}')" data-i18n-title="modal.provider.healthCheckTitle" title="${t('modal.provider.healthCheckTitle') || 'Perform health check'}">
+                            <i class="fas fa-stethoscope"></i> <span data-i18n="modal.provider.checkUnhealthyBtn">${t('modal.provider.checkUnhealthyBtn') || 'Check Unhealthy'}</span>
                         </button>
                         <button class="btn btn-secondary" onclick="window.refreshUnhealthyUuids('${providerType}')" data-i18n="modal.provider.refreshUnhealthyUuids" title="刷新不健康节点的UUID">
                             <i class="fas fa-sync-alt"></i> <span data-i18n="modal.provider.refreshUnhealthyUuidsBtn">刷新UUID</span>
@@ -1624,7 +1624,7 @@ function showAddProviderForm(providerType) {
         <div class="form-grid">
             <div class="form-group">
                 <label><span data-i18n="modal.provider.customName">自定义名称</span> <span class="optional-mark" data-i18n="config.optional">(选填)</span></label>
-                <input type="text" id="newCustomName" data-i18n="modal.provider.customName" placeholder="例如: 我的节点1">
+                <input type="text" id="newCustomName" data-i18n="modal.provider.customName" data-i18n-placeholder="modal.provider.customNamePlaceholder" placeholder="${t('modal.provider.customNamePlaceholder') || 'e.g. My Node 1'}">
             </div>
             <div class="form-group">
                 <label><span data-i18n="modal.provider.checkModelName">检查模型名称</span> <span class="optional-mark" data-i18n="config.optional">(选填)</span></label>
@@ -1639,11 +1639,11 @@ function showAddProviderForm(providerType) {
             </div>
             <div class="form-group">
                 <label><span data-i18n="modal.provider.concurrencyLimit">并发限制</span> <span class="optional-mark" data-i18n="config.optional">(选填)</span></label>
-                <input type="number" id="newConcurrencyLimit" placeholder="默认0不限制">
+                <input type="number" id="newConcurrencyLimit" data-i18n-placeholder="modal.provider.concurrencyPlaceholder" placeholder="${t('modal.provider.concurrencyPlaceholder') || '0 = unlimited'}">
             </div>
             <div class="form-group">
                 <label><span data-i18n="modal.provider.queueLimit">队列限制</span> <span class="optional-mark" data-i18n="config.optional">(选填)</span></label>
-                <input type="number" id="newQueueLimit" placeholder="默认0不限制">
+                <input type="number" id="newQueueLimit" data-i18n-placeholder="modal.provider.concurrencyPlaceholder" placeholder="${t('modal.provider.concurrencyPlaceholder') || '0 = unlimited'}">
             </div>
         </div>
         <div id="dynamicConfigFields">
