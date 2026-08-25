@@ -682,7 +682,7 @@ export class KiroApiService {
         await this.loadCredentials();
         
         // 根据当前加载的凭证生成唯一的 Machine ID
-        const machineId = generateMachineIdFromConfig({uuid: this.uuid, profileArn: this.profileArn, clientId: this.clientId}); //({
+        const machineId = generateMachineIdFromConfig({
             uuid: this.uuid,
             profileArn: this.profileArn,
             clientId: this.clientId
@@ -1851,7 +1851,7 @@ async saveCredentialsToFile(filePath, newData) {
                 'x-amz-user-agent': 'aws-sdk-rust/1.3.15 ua/2.1 api/codewhispererstreaming/0.1.17593 os/linux lang/rust/1.92.0 m/F app/AmazonQ-For-CLI',
                 'user-agent': 'aws-sdk-rust/1.3.15 ua/2.1 api/codewhispererstreaming/0.1.17593 os/linux lang/rust/1.92.0 md/appVersion-2.10.0 app/AmazonQ-For-CLI'
             };
-            if (token && (token.startsWith('ksk_') || this.apiKey || (typeof process !== 'undefined' && process.env.KIRO_API_KEY))) {
+            if (token && (token.startsWith('ksk_') || (this.apiKey && token === this.apiKey))) {
                 headers['TokenType'] = 'API_KEY';
             }
 
@@ -2456,7 +2456,7 @@ async saveCredentialsToFile(filePath, newData) {
             'x-amz-user-agent': 'aws-sdk-rust/1.3.15 ua/2.1 api/codewhispererstreaming/0.1.17593 os/linux lang/rust/1.92.0 m/F app/AmazonQ-For-CLI',
             'user-agent': 'aws-sdk-rust/1.3.15 ua/2.1 api/codewhispererstreaming/0.1.17593 os/linux lang/rust/1.92.0 md/appVersion-2.10.0 app/AmazonQ-For-CLI'
         };
-        if (token && (token.startsWith('ksk_') || this.apiKey || (typeof process !== 'undefined' && process.env.KIRO_API_KEY))) {
+        if (token && (token.startsWith('ksk_') || (this.apiKey && token === this.apiKey))) {
             headers['TokenType'] = 'API_KEY';
         }
 
@@ -3585,7 +3585,7 @@ async saveCredentialsToFile(filePath, newData) {
         const fullUrl = `${usageLimitsUrl}?${params.toString()}`;
 
         // 动态生成 headers
-        const machineId = generateMachineIdFromConfig({uuid: this.uuid, profileArn: this.profileArn, clientId: this.clientId}); //({
+        const machineId = generateMachineIdFromConfig({
             uuid: this.uuid,
             profileArn: this.profileArn,
             clientId: this.clientId
