@@ -1177,7 +1177,39 @@ async saveCredentialsToFile(filePath, newData) {
     /**
      * Build CodeWhisperer request from OpenAI messages
      */
-    async buildCodewhispererRequest(messages, model, tools = null, inSystemPrompt = null, thinking = null) {
+
+    _isReasoningModel(model) {
+        if (!model) return false;
+        const m = model.toLowerCase();
+        return m.includes('gpt-5.6') || m.includes('gpt-5_6');
+    }
+
+    _resolveEffort(model, thinking, outputConfig = null, reasoningEffort = null) {
+        const explicitEffort = reasoningEffort || outputConfig?.effort;
+        const isReasoning = this._isReasoningModel(model);
+
+        if (isReasoning) {
+            if (thinking?.type === 'disabled') return 'none';
+            if (explicitEffort) {
+                const valid = ['none', 'low', 'medium', 'high', 'xhigh', 'max'];
+                return valid.includes(explicitEffort.toLowerCase()) ? explicitEffort.toLowerCase() : 'high';
+            }
+            return ''; // Omit so backend uses default 'high'
+        }
+
+        if (explicitEffort) {
+            const valid = ['low', 'medium', 'high', 'xhigh', 'max'];
+            return valid.includes(explicitEffort.toLowerCase()) ? explicitEffort.toLowerCase() : 'medium';
+        }
+
+        if (thinking && (thinking.type === 'enabled' || thinking.type === 'adaptive')) {
+            return 'medium';
+        }
+
+        return '';
+    }
+
+    async buildCodewhispererRequest(messages, model, tools = null, inSystemPrompt = null, thinking = null, outputConfig = null, reasoningEffort = null) {
         const conversationId = uuidv4();
         
         // 内置的 systemPrompt 前缀
@@ -1683,6 +1715,19 @@ async saveCredentialsToFile(filePath, newData) {
         }
 
         request.conversationState.currentMessage.userInputMessage = userInputMessage;
+
+        const resolvedEffort = this._resolveEffort(codewhispererModel, thinking, outputConfig, reasoningEffort);
+        if (resolvedEffort) {
+            if (this._isReasoningModel(codewhispererModel)) {
+                request.additionalModelRequestFields = {
+                    reasoning: { effort: resolvedEffort }
+                };
+            } else {
+                request.additionalModelRequestFields = {
+                    output_config: { effort: resolvedEffort }
+                };
+            }
+        }
 
         if (this.authMethod === KIRO_CONSTANTS.AUTH_METHOD_SOCIAL) {
             request.profileArn = this.profileArn;
