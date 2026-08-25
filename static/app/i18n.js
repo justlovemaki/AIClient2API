@@ -1,6 +1,9 @@
 // 多语言配置
 const translations = {
     'zh-CN': {
+        'config.intervals.5m': '5分钟',
+        'config.intervals.10m': '10分钟',
+        'config.intervals.30m': '30分钟',
         // Extra UI modal buttons
         'modal.provider.resetAllHealthBtn': '重置为健康',
         'modal.provider.checkUnhealthyBtn': '检测不健康',
@@ -1226,6 +1229,9 @@ const translations = {
         'login.loggingIn': '登录中...',
     },
     'en-US': {
+        'config.intervals.5m': '5 min',
+        'config.intervals.10m': '10 min',
+        'config.intervals.30m': '30 min',
         // Extra UI modal buttons
         'modal.provider.resetAllHealthBtn': 'Reset Health',
         'modal.provider.checkUnhealthyBtn': 'Check Unhealthy',
@@ -2573,7 +2579,7 @@ export function getCurrentLanguage() {
 }
 
 // 更新页面语言
-function updatePageLanguage() {
+export function updatePageLanguage() {
     // 更新 HTML lang 属性
     document.documentElement.lang = currentLanguage;
     
@@ -2629,41 +2635,16 @@ export function initI18n() {
     
     // 监听 DOM 变化，自动翻译新添加的元素
     const observer = new MutationObserver((mutations) => {
-        mutations.forEach((mutation) => {
-            mutation.addedNodes.forEach((node) => {
-                if (node.nodeType === 1) { // 元素节点
-                    // 翻译新添加的元素
-                    if (node.hasAttribute('data-i18n')) {
-                        const key = node.getAttribute('data-i18n');
-                        const params = node.getAttribute('data-i18n-params');
-                        const parsedParams = params ? JSON.parse(params) : {};
-                        
-                        if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA') {
-                            if (node.placeholder !== undefined) {
-                                node.placeholder = t(key, parsedParams);
-                            }
-                        } else {
-                            node.textContent = t(key, parsedParams);
-                        }
-                    }
-                    
-                    // 翻译子元素
-                    node.querySelectorAll('[data-i18n]').forEach(element => {
-                        const key = element.getAttribute('data-i18n');
-                        const params = element.getAttribute('data-i18n-params');
-                        const parsedParams = params ? JSON.parse(params) : {};
-                        
-                        if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
-                            if (element.placeholder !== undefined) {
-                                element.placeholder = t(key, parsedParams);
-                            }
-                        } else {
-                            element.textContent = t(key, parsedParams);
-                        }
-                    });
-                }
-            });
-        });
+        let shouldUpdate = false;
+        for (const mutation of mutations) {
+            if (mutation.addedNodes.length > 0) {
+                shouldUpdate = true;
+                break;
+            }
+        }
+        if (shouldUpdate) {
+            updatePageLanguage();
+        }
     });
     
     observer.observe(document.body, {
@@ -2677,5 +2658,6 @@ export default {
     t,
     setLanguage,
     getCurrentLanguage,
-    initI18n
+    initI18n,
+    updatePageLanguage
 };

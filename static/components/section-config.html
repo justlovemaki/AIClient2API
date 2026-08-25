@@ -350,9 +350,9 @@
                     <div class="input-with-quick-select">
                         <input type="number" id="scheduledHealthCheckInterval" class="form-control" min="60000" max="3600000" step="60000" value="600000" data-i18n-placeholder="config.intervalPlaceholder" placeholder="ms (milliseconds)">
                         <div class="quick-select-btns">
-                            <button type="button" class="btn btn-sm btn-outline-secondary" data-value="300000">5分钟</button>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" data-value="600000">10分钟</button>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" data-value="1800000">30分钟</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-value="300000" data-i18n="config.intervals.5m">5 min</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-value="600000" data-i18n="config.intervals.10m">10 min</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" data-value="1800000" data-i18n="config.intervals.30m">30 min</button>
                         </div>
                     </div>
                     <small class="form-text" data-i18n="config.healthCheck.intervalNote">单位毫秒，最小60000ms(1分钟)，最大3600000ms(1小时)</small>

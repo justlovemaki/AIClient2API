@@ -1,3 +1,4 @@
+import { updatePageLanguage } from './i18n.js';
 // 导航功能模块
 
 import { elements } from './constants.js';
@@ -26,6 +27,7 @@ function loadSectionIfActive(sectionId) {
     }
 
     return loadSection(sectionId);
+        updatePageLanguage();
 }
 
 /**
@@ -104,6 +106,7 @@ function activateSection(sectionId, options = {}) {
     // the current activation is final.
     if (!hashWillChange) {
         loadSection(sectionId);
+        updatePageLanguage();
     }
 }
 

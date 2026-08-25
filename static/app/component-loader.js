@@ -1,3 +1,4 @@
+import { updatePageLanguage } from './i18n.js';
 /**
  * 组件加载器 - 用于动态加载 HTML 组件片段
  * Component Loader - For dynamically loading HTML component fragments
@@ -118,6 +119,7 @@ async function initializeComponents() {
         
         console.log('All components loaded successfully');
         // 触发组件加载完成事件
+        updatePageLanguage();
         window.dispatchEvent(new CustomEvent('componentsLoaded'));
         
     } catch (error) {

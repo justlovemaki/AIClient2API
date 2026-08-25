@@ -11,7 +11,7 @@ import {
     getProviderStats
 } from './utils.js';
 
-import { t } from './i18n.js';
+import { t, updatePageLanguage } from './i18n.js';
 
 import {
     initFileUpload,
@@ -198,6 +198,7 @@ async function initApp() {
     
     // 初始化导航功能，触发初始页面的激活
     initNavigation();
+    updatePageLanguage();
     
     // 显示欢迎消息
     showToast(t('common.success'), t('common.welcome'), 'success');
