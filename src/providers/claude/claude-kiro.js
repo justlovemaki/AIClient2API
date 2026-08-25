@@ -671,6 +671,7 @@ export class KiroApiService {
         this.axiosInstance = null; // Initialize later in async method
         this.axiosSocialRefreshInstance = null;
         this._tokenRefreshPromise = null;
+        this._profileArnDiscoveryPromise = null;
     }
  
     async initialize() {
@@ -924,6 +925,80 @@ async saveCredentialsToFile(filePath, newData) {
 };
 
     /**
+     * Discover and persist the real profile ARN for IdC / Builder ID credentials.
+     */
+    async ensureProfileArn() {
+        if (this.profileArn) return this.profileArn;
+
+        if (this.authMethod === KIRO_CONSTANTS.AUTH_METHOD_SOCIAL) {
+            return null;
+        }
+
+        if (!this.accessToken) {
+            throw new Error('Cannot discover Kiro profileArn without an access token.');
+        }
+
+        if (this._profileArnDiscoveryPromise) {
+            return this._profileArnDiscoveryPromise;
+        }
+
+        this._profileArnDiscoveryPromise = (async () => {
+            const regions = [...new Set([
+                this.region,
+                this.idcRegion,
+                'us-east-1',
+                'eu-central-1'
+            ].filter(Boolean))];
+            let lastError = null;
+
+            for (const region of regions) {
+                const axiosConfig = {
+                    method: 'post',
+                    url: `https://q.${region}.amazonaws.com/`,
+                    headers: {
+                        'Content-Type': 'application/x-amz-json-1.0',
+                        'x-amz-target': 'AmazonCodeWhispererService.ListAvailableProfiles',
+                        'Authorization': `Bearer ${this.accessToken}`,
+                        'amz-sdk-invocation-id': uuidv4(),
+                        'amz-sdk-request': 'attempt=1; max=1',
+                        'Connection': 'close'
+                    },
+                    data: { maxResults: 10 }
+                };
+                this._applySidecar(axiosConfig);
+
+                try {
+                    const response = await this.axiosInstance.request(axiosConfig);
+                    const profileArn = response.data?.profiles
+                        ?.map(profile => profile?.arn)
+                        .find(arn => typeof arn === 'string' && arn.length > 0);
+
+                    if (!profileArn) continue;
+
+                    this.profileArn = profileArn;
+                    const tokenFilePath = this.credsFilePath || path.join(this.credPath, KIRO_AUTH_TOKEN_FILE);
+                    await this.saveCredentialsToFile(tokenFilePath, { profileArn });
+                    logger.info(`[Kiro Auth] Discovered and persisted profileArn for ${this.authMethod || 'IdC'} credentials.`);
+                    return profileArn;
+                } catch (error) {
+                    lastError = error;
+                }
+            }
+
+            const detail = lastError?.response?.data?.message
+                || lastError?.message
+                || 'no profile returned';
+            throw new Error(`Kiro profileArn is missing and automatic discovery failed: ${detail}`);
+        })();
+
+        try {
+            return await this._profileArnDiscoveryPromise;
+        } finally {
+            this._profileArnDiscoveryPromise = null;
+        }
+    }
+
+    /**
      * 执行实际的 token 刷新操作（内部方法）
      * @param {Function} saveCredentialsToFile - 保存凭证的函数
      * @param {string} tokenFilePath - 凭证文件路径
@@ -1174,6 +1249,7 @@ async saveCredentialsToFile(filePath, newData) {
      * Build CodeWhisperer request from OpenAI messages
      */
     async buildCodewhispererRequest(messages, model, tools = null, inSystemPrompt = null, thinking = null) {
+        await this.ensureProfileArn();
         const conversationId = uuidv4();
         
         // 内置的 systemPrompt 前缀
@@ -1680,7 +1756,7 @@ async saveCredentialsToFile(filePath, newData) {
 
         request.conversationState.currentMessage.userInputMessage = userInputMessage;
 
-        if (this.authMethod === KIRO_CONSTANTS.AUTH_METHOD_SOCIAL) {
+        if (this.profileArn) {
             request.profileArn = this.profileArn;
         }
 
@@ -3540,6 +3616,7 @@ async saveCredentialsToFile(filePath, newData) {
      */
     async getUsageLimits() {
         if (!this.isInitialized) await this.initialize();
+        await this.ensureProfileArn();
 
         // Token 刷新策略：
         // 1. 已过期 → 必须等待刷新
@@ -3563,7 +3640,7 @@ async saveCredentialsToFile(filePath, newData) {
             origin: KIRO_CONSTANTS.ORIGIN_AI_EDITOR,
             resourceType: resourceType
         });
-         if (this.authMethod === KIRO_CONSTANTS.AUTH_METHOD_SOCIAL && this.profileArn) {
+        if (this.profileArn) {
             params.append('profileArn', this.profileArn);
         }
         const fullUrl = `${usageLimitsUrl}?${params.toString()}`;

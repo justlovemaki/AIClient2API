@@ -44,6 +44,7 @@
     "test:unit": "node run-tests.js --unit",
     "test:integration": "node run-tests.js --integration",
     "test:summary": "node test-summary.js",
+    "test:kiro-profile-arn": "node --test --test-force-exit tests/kiro-profile-arn.node.test.mjs",
     "help": "node src/scripts/help.js",
     "example:api": "node src/scripts/example-api.js"
   }
