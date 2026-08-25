@@ -420,12 +420,18 @@ In the Web UI management interface, you can complete authorization configuration
 3. **Organization Account**: Organization accounts require separate authorization, contact the administrator to obtain authorization.
 
 #### Kiro API Configuration
-1. **Environment Preparation**: [Download and install Kiro client](https://kiro.dev/pricing/)
-2. **Complete Authorization**: Log in to your account in the client to generate `kiro-auth-token.json` credential file
-3. **Best Practice**: Recommended to use with **Claude Code** for optimal experience
-4. **Important Notice**: Kiro service usage policy has been updated, please visit the official website for the latest usage restrictions and terms
+1. **Authentication Methods**:
+   - **Method A: Kiro API Key (`ksk_...`) (Recommended)**:
+     - Directly enter your Kiro API Key in the Web UI by clicking **Generate Auth** -> **Kiro API Key (ksk_...)** or under Provider Node configuration.
+     - You can also export `export KIRO_API_KEY="ksk_..."` in your environment.
+     - Completely bypasses OAuth token expiration and refresh cycles, communicating directly with AWS CodeWhisperer via the official Rust client protocol.
+   - **Method B: OAuth SSO (Google / GitHub / AWS Builder ID)**:
+     - Generate credentials using one-click OAuth login in the Web UI or import existing `~/.aws/sso/cache/kiro-auth-token.json`.
+2. **Best Practice**: Recommended to use with **Claude Code** and **Codex** for optimal agent workflows.
+3. **Prompt Caching & Reasoning**: Full native support for Prompt Caching (`cachePoint`) and AWS Extended Thinking (`additionalModelRequestFields`) across Claude (`opus-5`, `sonnet-5`, `sonnet-4-6`) and GPT-5.6 (`sol`, `terra`, `luna`).
+4. **Important Notice**: Kiro service usage policy has been updated, please visit the official website for the latest usage restrictions and terms.
 
-#### Kiro Extended Thinking (Claude Models)
+#### Kiro Extended Thinking & Reasoning (Claude & GPT-5.6)
 AIClient2API supports Kiro extended thinking when using Claude-compatible requests (`/v1/messages`) or OpenAI-compatible requests (`/v1/chat/completions`) routed to `claude-kiro-oauth`.
 
 **Claude-compatible (`/v1/messages`)**:

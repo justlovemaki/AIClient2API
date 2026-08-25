@@ -419,12 +419,18 @@ docker compose up -d
 3. **组织账号**：组织账号需要单独授权，联系管理员获取授权。
 
 #### Kiro API 配置
-1. **环境准备**：[下载并安装 Kiro 客户端](https://kiro.dev/pricing/)
-2. **完成授权**：在客户端中登录账号，生成 `kiro-auth-token.json` 凭据文件
-3. **最佳实践**：推荐配合 **Claude Code** 使用，可获得最优体验
-4. **重要提示**：Kiro 服务使用政策已更新，请访问官方网站查看最新使用限制和条款
+1. **认证方式**：
+   - **方式 A：Kiro API Key (`ksk_...`) 直连（推荐）**：
+     - 在 Web UI 中点击**生成授权** -> **Kiro API Key (ksk_...)** 或在提供商节点配置中直接输入您的 Kiro API Key。
+     - 亦可在环境变量中设置 `export KIRO_API_KEY="ksk_..."`。
+     - 完全跳过 OAuth Refresh Token 刷新周期与过期问题，使用官方 Rust 客户端协议直连 AWS CodeWhisperer。
+   - **方式 B：OAuth SSO 登录（Google / GitHub / AWS Builder ID）**：
+     - 在 Web UI 中一键生成授权或导入已有 `~/.aws/sso/cache/kiro-auth-token.json`。
+2. **最佳实践**：推荐配合 **Claude Code** 与 **Codex** 使用，可获得最优体验。
+3. **Prompt 缓存与深度思考**：原生支持 Claude (`opus-5`, `sonnet-5`, `sonnet-4-6`) 与 GPT-5.6 (`sol`, `terra`, `luna`) 的提示词缓存 (`cachePoint`) 及 AWS 扩展思考 (`additionalModelRequestFields`)。
+4. **重要提示**：Kiro 服务使用政策已更新，请访问官方网站查看最新使用限制和条款。
 
-#### Kiro 扩展思考 (Claude 模型)
+#### Kiro 扩展思考与推理 (Claude & GPT-5.6)
 AIClient2API 在使用路由到 `claude-kiro-oauth` 的 Claude 兼容请求 (`/v1/messages`) 或 OpenAI 兼容请求 (`/v1/chat/completions`) 时支持 Kiro 扩展思考。
 
 **Claude 兼容接口 (`/v1/messages`)**:

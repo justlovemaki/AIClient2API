@@ -2361,6 +2361,13 @@ function showKiroAuthMethodSelector(providerType) {
             </div>
             <div class="modal-body">
                 <div class="auth-method-options" style="display: flex; flex-direction: column; gap: 12px;">
+                    <button class="auth-method-btn" data-method="api-key" style="display: flex; align-items: center; gap: 12px; padding: 16px; border: 2px solid #10b981; border-radius: 8px; background: #f0fdf4; cursor: pointer; transition: all 0.2s;">
+                        <i class="fas fa-key" style="font-size: 24px; color: #10b981;"></i>
+                        <div style="text-align: left;">
+                            <div style="font-weight: 600; color: #065f46;" data-i18n="oauth.kiro.apiKey">${t('oauth.kiro.apiKey')}</div>
+                            <div style="font-size: 12px; color: #047857;" data-i18n="oauth.kiro.apiKeyDesc">${t('oauth.kiro.apiKeyDesc')}</div>
+                        </div>
+                    </button>
                     <button class="auth-method-btn" data-method="google" style="display: flex; align-items: center; gap: 12px; padding: 16px; border: 2px solid #e0e0e0; border-radius: 8px; background: white; cursor: pointer; transition: all 0.2s;">
                         <i class="fab fa-google" style="font-size: 24px; color: #4285f4;"></i>
                         <div style="text-align: left;">
@@ -2419,18 +2426,30 @@ function showKiroAuthMethodSelector(providerType) {
     const methodBtns = modal.querySelectorAll('.auth-method-btn');
     methodBtns.forEach(btn => {
         btn.addEventListener('mouseenter', () => {
-            btn.style.borderColor = '#00a67e';
-            btn.style.background = '#f8fffe';
+            if (btn.dataset.method === 'api-key') {
+                btn.style.borderColor = '#059669';
+                btn.style.background = '#ecfdf5';
+            } else {
+                btn.style.borderColor = '#00a67e';
+                btn.style.background = '#f8fffe';
+            }
         });
         btn.addEventListener('mouseleave', () => {
-            btn.style.borderColor = '#e0e0e0';
-            btn.style.background = 'white';
+            if (btn.dataset.method === 'api-key') {
+                btn.style.borderColor = '#10b981';
+                btn.style.background = '#f0fdf4';
+            } else {
+                btn.style.borderColor = '#e0e0e0';
+                btn.style.background = 'white';
+            }
         });
         btn.addEventListener('click', async () => {
             const method = btn.dataset.method;
             modal.remove();
             
-            if (method === 'batch-import') {
+            if (method === 'api-key') {
+                showKiroApiKeyModal(providerType);
+            } else if (method === 'batch-import') {
                 showKiroBatchImportModal();
             } else if (method === 'aws-import') {
                 showKiroAwsImportModal();
@@ -2439,6 +2458,115 @@ function showKiroAuthMethodSelector(providerType) {
             }
         });
     });
+}
+
+/**
+ * 显示 Kiro API Key 直接添加模态框
+ * @param {string} providerType - 提供商类型
+ */
+function showKiroApiKeyModal(providerType = 'claude-kiro-oauth') {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.display = 'flex';
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 550px;">
+            <div class="modal-header">
+                <h3><i class="fas fa-key" style="color: #10b981;"></i> <span data-i18n="oauth.kiro.apiKeyModalTitle">${t('oauth.kiro.apiKeyModalTitle')}</span></h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="api-key-instructions" style="margin-bottom: 16px; padding: 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;">
+                    <p style="margin: 0; font-size: 13px; color: #166534; line-height: 1.5;">
+                        <i class="fas fa-shield-alt"></i>
+                        <span data-i18n="oauth.kiro.apiKeyModalDesc">${t('oauth.kiro.apiKeyModalDesc')}</span>
+                    </p>
+                </div>
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label for="kiroApiKeyInput" style="display: block; margin-bottom: 6px; font-weight: 600; color: #374151;">
+                        <span data-i18n="oauth.kiro.apiKeyInputLabel">${t('oauth.kiro.apiKeyInputLabel')}</span> <span style="color: #ef4444;">*</span>
+                    </label>
+                    <input 
+                        type="password" 
+                        id="kiroApiKeyInput" 
+                        class="form-control"
+                        style="width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-family: monospace; font-size: 13px;"
+                        placeholder="ksk_..."
+                    />
+                </div>
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label for="kiroApiKeyCustomName" style="display: block; margin-bottom: 6px; font-weight: 600; color: #374151;">
+                        <span data-i18n="oauth.kiro.apiKeyCustomNameLabel">${t('oauth.kiro.apiKeyCustomNameLabel')}</span> <span class="optional-tag">${t('config.optional')}</span>
+                    </label>
+                    <input 
+                        type="text" 
+                        id="kiroApiKeyCustomName" 
+                        class="form-control"
+                        style="width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px;"
+                        placeholder="${t('oauth.kiro.apiKeyCustomNamePlaceholder')}"
+                        data-i18n-placeholder="oauth.kiro.apiKeyCustomNamePlaceholder"
+                    />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-cancel" data-i18n="modal.provider.cancel">${t('modal.provider.cancel')}</button>
+                <button class="btn btn-primary api-key-submit" id="kiroApiKeySubmit">
+                    <i class="fas fa-check"></i>
+                    <span data-i18n="common.save">${t('common.save')}</span>
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    const apiKeyInput = modal.querySelector('#kiroApiKeyInput');
+    const customNameInput = modal.querySelector('#kiroApiKeyCustomName');
+    const submitBtn = modal.querySelector('#kiroApiKeySubmit');
+    const closeBtn = modal.querySelector('.modal-close');
+    const cancelBtn = modal.querySelector('.modal-cancel');
+    
+    [closeBtn, cancelBtn].forEach(btn => btn.addEventListener('click', () => modal.remove()));
+    
+    submitBtn.onclick = async () => {
+        const apiKey = apiKeyInput.value.trim();
+        const customName = customNameInput.value.trim();
+        
+        if (!apiKey) {
+            showToast(t('common.warning'), t('oauth.kiro.apiKeyEmptyError'), 'warning');
+            apiKeyInput.focus();
+            return;
+        }
+        
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>' + t('common.saving') + '</span>';
+        
+        try {
+            const response = await window.apiClient.post('/providers', {
+                providerType: providerType,
+                providerConfig: {
+                    customName: customName || 'Kiro-API-Key',
+                    KIRO_API_KEY: apiKey,
+                    isHealthy: true,
+                    isDisabled: false,
+                    checkHealth: true
+                }
+            });
+            
+            if (response.success) {
+                showToast(t('common.success'), t('modal.provider.saveSuccess'), 'success');
+                modal.remove();
+                if (window.loadProviders) await window.loadProviders(true);
+            } else {
+                throw new Error(response.error?.message || response.message || 'Save failed');
+            }
+        } catch (error) {
+            console.error('Failed to add Kiro API Key node:', error);
+            showToast(t('common.error'), t('modal.provider.saveFailed') + ': ' + error.message, 'error');
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-check"></i> <span>' + t('common.save') + '</span>';
+        }
+    };
 }
 
 /**
