@@ -2462,9 +2462,16 @@ const translations = {
 function getDefaultLanguage() {
     try {
         const saved = localStorage.getItem('language');
-        if (saved) return saved;
         const browserLang = (typeof navigator !== 'undefined' && (navigator.language || navigator.userLanguage) || '').toLowerCase();
-        if (browserLang.startsWith('zh')) return 'zh-CN';
+        const isBrowserChinese = browserLang.startsWith('zh');
+        
+        // If legacy localStorage has zh-CN but the browser is NOT Chinese, override to en-US
+        if (saved === 'zh-CN' && !isBrowserChinese) {
+            localStorage.setItem('language', 'en-US');
+            return 'en-US';
+        }
+        if (saved) return saved;
+        if (isBrowserChinese) return 'zh-CN';
         return 'en-US';
     } catch (e) {
         return 'en-US';
