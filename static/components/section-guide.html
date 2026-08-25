@@ -154,13 +154,13 @@
                 </div>
                 
                 <div class="client-config-item">
-                    <h4><i class="fas fa-code"></i> 通用 cURL 调用</h4>
+                    <h4><i class="fas fa-code"></i> <span data-i18n="guide.client.curl.title">General cURL Request</span></h4>
                     <div class="config-steps">
                         <pre><code>curl http://localhost:3000/{provider}/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
-    "model": "模型名称",
+    "model": "model-name",
     "messages": [{"role": "user", "content": "Hello!"}],
     "max_tokens": 1000
   }'</code></pre>

@@ -7,6 +7,7 @@ import { loadSectionIfActive } from './navigation.js';
 
 // 提供商配置缓存
 let currentProviderConfigs = null;
+let lastLoadedConfigData = null;
 let isCurrentPasswordDefault = false;
 
 function getSelectedModelProviders() {
@@ -248,18 +249,48 @@ function updateConfigProviderConfigs(configs) {
     const modelProviderEl = document.getElementById('modelProvider');
     if (modelProviderEl) {
         renderProviderTags(modelProviderEl, configs, true);
+        if (lastLoadedConfigData) {
+            const providers = Array.isArray(lastLoadedConfigData.DEFAULT_MODEL_PROVIDERS)
+                ? lastLoadedConfigData.DEFAULT_MODEL_PROVIDERS
+                : (typeof lastLoadedConfigData.MODEL_PROVIDER === 'string' ? lastLoadedConfigData.MODEL_PROVIDER.split(',') : []);
+            const tags = Array.from(modelProviderEl.querySelectorAll('.provider-tag'));
+            providers.forEach(id => {
+                const tag = tags.find(t => t.getAttribute('data-value') === id);
+                if (tag) {
+                    tag.classList.add('selected');
+                    modelProviderEl.appendChild(tag);
+                }
+            });
+            updatePinnedStatus(modelProviderEl);
+        }
     }
     
     // 渲染代理设置中的提供商选择
     const proxyProvidersEl = document.getElementById('proxyProviders');
     if (proxyProvidersEl) {
         renderProviderTags(proxyProvidersEl, configs, false);
+        if (lastLoadedConfigData) {
+            const enabledProviders = lastLoadedConfigData.PROXY_ENABLED_PROVIDERS || [];
+            proxyProvidersEl.querySelectorAll('.provider-tag').forEach(tag => {
+                if (enabledProviders.includes(tag.getAttribute('data-value'))) {
+                    tag.classList.add('selected');
+                }
+            });
+        }
     }
 
     // 渲染 TLS Sidecar 设置中的提供商选择
     const tlsSidecarProvidersEl = document.getElementById('tlsSidecarProviders');
     if (tlsSidecarProvidersEl) {
         renderProviderTags(tlsSidecarProvidersEl, configs, false);
+        if (lastLoadedConfigData) {
+            const enabledProviders = lastLoadedConfigData.TLS_SIDECAR_ENABLED_PROVIDERS || [];
+            tlsSidecarProvidersEl.querySelectorAll('.provider-tag').forEach(tag => {
+                if (enabledProviders.includes(tag.getAttribute('data-value'))) {
+                    tag.classList.add('selected');
+                }
+            });
+        }
     }
 
     // 渲染定时健康检查的提供商选择
@@ -413,6 +444,7 @@ async function loadConfiguration() {
         }
 
         const data = await window.apiClient.get('/config');
+        lastLoadedConfigData = data;
 
         // 初始化替换规则 UI
         initReplacementsUI();
