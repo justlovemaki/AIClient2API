@@ -1352,7 +1352,7 @@ async saveCredentialsToFile(filePath, newData) {
                             logger.info(`[Kiro] Truncated tool '${tool.name}' description: ${originalLength} -> ${desc.length} chars`);
                         }
                         
-                        return {
+                        const entry = {
                             toolSpecification: {
                                 name: toolNameMaps.toKiroName(tool.name),
                                 description: desc,
@@ -1361,7 +1361,10 @@ async saveCredentialsToFile(filePath, newData) {
                                 }
                             }
                         };
-                    });
+                        return tool.cache_control
+                            ? [entry, { cachePoint: { type: "default" } }]
+                            : [entry];
+                    }).flat();
                 
                 if (truncatedCount > 0) {
                     logger.info(`[Kiro] Truncated ${truncatedCount} tool description(s) to max ${MAX_DESCRIPTION_LENGTH} chars`);
