@@ -236,6 +236,7 @@ function getFieldLabel(key) {
         'CLAUDE_BASE_URL': 'Claude Base URL',
         'PROJECT_ID': t('modal.provider.field.projectId'),
         'GEMINI_OAUTH_CREDS_FILE_PATH': t('modal.provider.field.oauthPath'),
+        'KIRO_API_KEY': 'Kiro API Key (ksk_...)',
         'KIRO_OAUTH_CREDS_FILE_PATH': t('modal.provider.field.oauthPath'),
         'QWEN_OAUTH_CREDS_FILE_PATH': t('modal.provider.field.oauthPath'),
         'ANTIGRAVITY_OAUTH_CREDS_FILE_PATH': t('modal.provider.field.oauthPath'),
@@ -381,6 +382,12 @@ function getProviderTypeFields(providerType) {
             }
         ],
         'claude-kiro-oauth': [
+            {
+                id: 'KIRO_API_KEY',
+                label: `Kiro API Key (ksk_...) <span class="optional-tag">${t('config.optional')}</span>`,
+                type: 'password',
+                placeholder: 'ksk_...'
+            },
             {
                 id: 'KIRO_OAUTH_CREDS_FILE_PATH',
                 label: t('modal.provider.field.oauthPath'),
