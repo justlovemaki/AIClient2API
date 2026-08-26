@@ -65,23 +65,32 @@ function addLogEntry(logData) {
     
     if (!elements.logsContainer) return;
     
+    while (elements.logsContainer.children.length >= 100) {
+        elements.logsContainer.removeChild(elements.logsContainer.firstElementChild);
+    }
+    
     const logEntry = document.createElement('div');
     logEntry.className = 'log-entry';
 
-    const date = new Date(logData.timestamp);
+    const date = new Date(logData.timestamp || Date.now());
     const timeStr = date.toLocaleTimeString();
-    const levelClass = `log-level-${logData.level}`;
+    const level = (logData.level || 'info').toLowerCase();
+    const levelClass = `log-level-${level}`;
 
     logEntry.innerHTML = `
         <span class="log-time">[${timeStr}]</span>
-        <span class="${levelClass}">[${logData.level.toUpperCase()}]</span>
-        <span class="log-message">${escapeHtml(logData.message)}</span>
+        <span class="${levelClass}">[${level.toUpperCase()}]</span>
+        <span class="log-message">${escapeHtml(logData.message || '')}</span>
     `;
 
     elements.logsContainer.appendChild(logEntry);
 
     if (autoScroll) {
-        elements.logsContainer.scrollTop = elements.logsContainer.scrollHeight;
+        requestAnimationFrame(() => {
+            if (elements.logsContainer) {
+                elements.logsContainer.scrollTop = elements.logsContainer.scrollHeight;
+            }
+        });
     }
 }
 

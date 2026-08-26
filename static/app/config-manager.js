@@ -825,6 +825,7 @@ async function saveConfiguration(options = {}) {
 
     try {
         await window.apiClient.post('/config', config);
+        lastLoadedConfigData = config;
         
         // 如果输入了新密码，单独保存密码
         let passwordUpdated = false;

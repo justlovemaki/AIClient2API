@@ -2484,11 +2484,12 @@ const translations = {
 function getDefaultLanguage() {
     try {
         const saved = localStorage.getItem('language');
+        const isExplicit = localStorage.getItem('language_explicit') === 'true';
         const browserLang = (typeof navigator !== 'undefined' && (navigator.language || navigator.userLanguage) || '').toLowerCase();
         const isBrowserChinese = browserLang.startsWith('zh');
         
-        // If legacy localStorage has zh-CN but the browser is NOT Chinese, override to en-US
-        if (saved === 'zh-CN' && !isBrowserChinese) {
+        // If legacy localStorage has zh-CN but the browser is NOT Chinese, and user didn't explicitly select it, override to en-US
+        if (saved === 'zh-CN' && !isBrowserChinese && !isExplicit) {
             localStorage.setItem('language', 'en-US');
             return 'en-US';
         }
@@ -2518,6 +2519,7 @@ export function setLanguage(lang) {
     if (translations[lang]) {
         currentLanguage = lang;
         localStorage.setItem('language', lang);
+        localStorage.setItem('language_explicit', 'true');
         updatePageLanguage();
         // 更新图片
         updateDashboardImages(lang);
@@ -2666,7 +2668,7 @@ export function initI18n() {
     const observer = new MutationObserver((mutations) => {
         let shouldUpdate = false;
         for (const mutation of mutations) {
-            if (mutation.addedNodes.length > 0) {
+            if (Array.from(mutation.addedNodes).some(node => node.nodeType === Node.ELEMENT_NODE)) {
                 shouldUpdate = true;
                 break;
             }

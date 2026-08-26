@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title data-i18n="login.title">登录 - AIClient2API</title>
-    <link rel="icon" type="image/x-icon" href="https://src.hex2077.dev/logo/favicon.ico">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <style>
         * {
             margin: 0;
@@ -188,7 +188,7 @@
     <div style="position: absolute; top: 20px; right: 20px;" id="langSwitcherContainer"></div>
     <div class="login-container">
         <div class="logo">
-            <img src="https://src.hex2077.dev/logo/favicon.ico" alt="Logo" onerror="this.style.display='none'">
+            <img src="/favicon.ico" alt="Logo" onerror="this.style.display='none'">
             <h1>AIClient2API</h1>
             <p data-i18n="login.heading">请登录以继续</p>
         </div>
@@ -329,12 +329,22 @@
             }, 300);
         }
 
-        function checkLoginStatus() {
+        async function checkLoginStatus() {
             const token = localStorage.getItem('authToken');
-            
-            if (token) {
-                // Token存在，跳转到主页
-                window.location.href = '/';
+            if (token && token !== 'null' && token !== 'undefined' && token.trim() !== '') {
+                try {
+                    const res = await fetch('/api/health', {
+                        headers: { 'Authorization': 'Bearer ' + token }
+                    });
+                    if (res.ok) {
+                        window.location.href = '/';
+                    } else {
+                        localStorage.removeItem('authToken');
+                        localStorage.removeItem('authTokenExpiry');
+                    }
+                } catch (e) {
+                    // Ignore network error
+                }
             }
         }
 

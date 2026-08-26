@@ -1888,7 +1888,7 @@ async saveCredentialsToFile(filePath, newData) {
             throw new Error('No messages found in request body');
         }
 
-        const requestData = await this.buildCodewhispererRequest(messages, model, body.tools, body.system, body.thinking);
+        const requestData = await this.buildCodewhispererRequest(messages, model, body.tools, body.system, body.thinking, body.output_config, body.reasoning_effort);
 
         try {
             const token = this.accessToken; // Use the already initialized token
@@ -2493,7 +2493,7 @@ async saveCredentialsToFile(filePath, newData) {
             throw new Error('No messages found in request body');
         }
 
-        const requestData = await this.buildCodewhispererRequest(messages, model, body.tools, body.system, body.thinking);
+        const requestData = await this.buildCodewhispererRequest(messages, model, body.tools, body.system, body.thinking, body.output_config, body.reasoning_effort);
         const toolNameMaps = requestData._kiroToolNameMaps;
 
         const token = this.accessToken;
@@ -3649,6 +3649,9 @@ async saveCredentialsToFile(filePath, newData) {
             'amz-sdk-request': 'attempt=1; max=1',
             'Connection': 'close'
         };
+        if (this.accessToken && (this.accessToken.startsWith('ksk_') || (this.apiKey && this.accessToken === this.apiKey))) {
+            headers['TokenType'] = 'API_KEY';
+        }
 
         const axiosConfig = {
             method: 'get',
