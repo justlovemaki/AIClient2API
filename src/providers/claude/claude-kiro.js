@@ -44,6 +44,7 @@ const KIRO_CONSTANTS = {
     CONTENT_TYPE_JSON: 'application/json',
     ACCEPT_JSON: 'application/json',
     AUTH_METHOD_SOCIAL: 'social',
+    BUILDER_ID_PROFILE_ARN: 'arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX',
     CHAT_TRIGGER_TYPE_MANUAL: 'MANUAL',
     ORIGIN_AI_EDITOR: 'AI_EDITOR',
     TOTAL_CONTEXT_TOKENS: 200000, // Claude Sonnet 4.5 actual context is 200K
@@ -934,6 +935,8 @@ async saveCredentialsToFile(filePath, newData) {
             return null;
         }
 
+        await this._prepareAccessTokenForRequest('profileArn discovery');
+
         if (!this.accessToken) {
             throw new Error('Cannot discover Kiro profileArn without an access token.');
         }
@@ -950,6 +953,24 @@ async saveCredentialsToFile(filePath, newData) {
                 'eu-central-1'
             ].filter(Boolean))];
             let lastError = null;
+            let refreshedAfterUnauthorized = false;
+            const acceptDiscoveredProfileArn = async (response) => {
+                const profileArn = response.data?.profiles
+                    ?.map(profile => profile?.arn)
+                    .find(arn => typeof arn === 'string' && arn.length > 0);
+
+                if (!profileArn) return null;
+
+                this.profileArn = profileArn;
+                const tokenFilePath = this.credsFilePath || path.join(this.credPath, KIRO_AUTH_TOKEN_FILE);
+                try {
+                    await this.saveCredentialsToFile(tokenFilePath, { profileArn });
+                    logger.info(`[Kiro Auth] Discovered and persisted profileArn for ${this.authMethod || 'IdC'} credentials.`);
+                } catch (error) {
+                    logger.warn(`[Kiro Auth] Discovered profileArn but could not persist it: ${error.message}`);
+                }
+                return profileArn;
+            };
 
             for (const region of regions) {
                 const axiosConfig = {
@@ -969,18 +990,28 @@ async saveCredentialsToFile(filePath, newData) {
 
                 try {
                     const response = await this.axiosInstance.request(axiosConfig);
-                    const profileArn = response.data?.profiles
-                        ?.map(profile => profile?.arn)
-                        .find(arn => typeof arn === 'string' && arn.length > 0);
-
-                    if (!profileArn) continue;
-
-                    this.profileArn = profileArn;
-                    const tokenFilePath = this.credsFilePath || path.join(this.credPath, KIRO_AUTH_TOKEN_FILE);
-                    await this.saveCredentialsToFile(tokenFilePath, { profileArn });
-                    logger.info(`[Kiro Auth] Discovered and persisted profileArn for ${this.authMethod || 'IdC'} credentials.`);
-                    return profileArn;
+                    const profileArn = await acceptDiscoveredProfileArn(response);
+                    if (profileArn) return profileArn;
                 } catch (error) {
+                    const detail = error?.response?.data?.message || error?.message || '';
+                    if (error?.response?.status === 403 && detail.includes('AWS Builder ID is not supported for this operation')) {
+                        this.profileArn = KIRO_CONSTANTS.BUILDER_ID_PROFILE_ARN;
+                        logger.info('[Kiro Auth] Using the Kiro Builder ID profileArn because profile discovery is unsupported.');
+                        return this.profileArn;
+                    }
+                    if (error?.response?.status === 401 && !refreshedAfterUnauthorized) {
+                        refreshedAfterUnauthorized = true;
+                        try {
+                            await this.initializeAuth(true);
+                            axiosConfig.headers.Authorization = `Bearer ${this.accessToken}`;
+                            const retryResponse = await this.axiosInstance.request(axiosConfig);
+                            const profileArn = await acceptDiscoveredProfileArn(retryResponse);
+                            if (profileArn) return profileArn;
+                        } catch (retryError) {
+                            lastError = retryError;
+                            continue;
+                        }
+                    }
                     lastError = error;
                 }
             }
@@ -3640,7 +3671,7 @@ async saveCredentialsToFile(filePath, newData) {
             origin: KIRO_CONSTANTS.ORIGIN_AI_EDITOR,
             resourceType: resourceType
         });
-        if (this.profileArn) {
+        if (this.profileArn && this.profileArn !== KIRO_CONSTANTS.BUILDER_ID_PROFILE_ARN) {
             params.append('profileArn', this.profileArn);
         }
         const fullUrl = `${usageLimitsUrl}?${params.toString()}`;
