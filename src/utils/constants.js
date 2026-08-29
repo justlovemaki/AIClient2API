@@ -62,6 +62,7 @@ export const MODEL_PROVIDER = {
     ATLASCLOUD: 'atlascloud',
     QINIU: 'qiniu',
     FENNO: 'fenno',
+    ORCAROUTER: 'orcarouter',
     OPENAI_CUSTOM_RESPONSES: 'openaiResponses-custom',
     CLAUDE_CUSTOM: 'claude-custom',
     KIRO_API: 'claude-kiro-oauth',

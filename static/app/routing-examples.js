@@ -178,6 +178,17 @@ function getAvailableRoutes() {
             badgeClass: 'official'
         },
         {
+            provider: 'orcarouter',
+            name: 'OrcaRouter',
+            paths: {
+                openai: '/orcarouter/v1/chat/completions',
+                claude: '/orcarouter/v1/messages'
+            },
+            description: t('dashboard.routing.official'),
+            badge: t('dashboard.routing.official'),
+            badgeClass: 'official'
+        },
+        {
             provider: 'qiniu',
             name: 'Qiniu Cloud AI',
             paths: {
@@ -392,6 +403,7 @@ async function copyCurlExample(provider, options = {}) {
             break;
             
         case 'atlascloud':
+        case 'orcarouter':
         case 'qiniu':
         case 'fenno':
         case 'openai-custom':
@@ -533,6 +545,7 @@ function renderRoutingExamples(providerConfigs) {
         'gemini-antigravity': 'fa-rocket',
         'openai-custom': 'fa-comments',
         'atlascloud': 'fa-cloud',
+        'orcarouter': 'fa-cloud',
         'qiniu': 'fa-cloud',
         'fenno': 'fa-code',
         'claude-custom': 'fa-brain',
@@ -553,6 +566,7 @@ function renderRoutingExamples(providerConfigs) {
         'claude-kiro-oauth': 'claude-sonnet-4-5',
         'openai-custom': 'gpt-5.5',
         'atlascloud': 'gpt-5.5',
+        'orcarouter': 'orcarouter/auto',
         'qiniu': 'gpt-5.5',
         'fenno': 'gpt-5.5',
         'openai-qwen-oauth': 'qwen3-coder-plus',

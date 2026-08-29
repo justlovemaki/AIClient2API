@@ -92,6 +92,7 @@ export const PROVIDER_MODELS = {
     ],
     'openai-custom': [],
     'atlascloud': [],
+    'orcarouter': [],
     'qiniu': [],
     'fenno': [],
     'openaiResponses-custom': [],
@@ -180,6 +181,7 @@ export const MANAGED_MODEL_LIST_PROVIDERS = [
     'openaiResponses-custom',
     'claude-custom',
     'atlascloud',
+    'orcarouter',
     'qiniu',
     'fenno'
 ];

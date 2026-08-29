@@ -4,7 +4,7 @@ import { escapeHtml, showToast, getFieldLabel, getProviderTypeFields } from './u
 import { handleProviderPasswordToggle } from './event-handlers.js';
 import { t } from './i18n.js';
 
-const MANAGED_MODEL_LIST_PROVIDERS = new Set(['openai-custom', 'openaiResponses-custom', 'claude-custom', 'atlascloud', 'qiniu', 'fenno']);
+const MANAGED_MODEL_LIST_PROVIDERS = new Set(['openai-custom', 'openaiResponses-custom', 'claude-custom', 'atlascloud', 'orcarouter', 'qiniu', 'fenno']);
 
 // 分页配置
 const PROVIDERS_PER_PAGE = 5;

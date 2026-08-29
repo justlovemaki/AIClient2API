@@ -54,6 +54,7 @@ export class ProviderPoolManager {
         'claude-kiro-oauth': 'claude-sonnet-4-5',
         'openai-custom': 'gpt-5.5',
         'atlascloud': 'gpt-5.5',
+        'orcarouter': 'orcarouter/auto',
         'qiniu': 'gpt-5.5',
         'fenno': 'gpt-5.5',
         'openai-qwen-oauth': 'qwen3-coder-plus',

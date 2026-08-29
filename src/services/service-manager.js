@@ -577,6 +577,7 @@ export async function getProviderStatus(config, options = {}) {
     const identifyFieldMap = {
         'openai-custom': 'OPENAI_BASE_URL',
         'atlascloud': 'OPENAI_BASE_URL',
+        'orcarouter': 'OPENAI_BASE_URL',
         'qiniu': 'OPENAI_BASE_URL',
         'fenno': 'OPENAI_BASE_URL',
         'openaiResponses-custom': 'OPENAI_BASE_URL',
