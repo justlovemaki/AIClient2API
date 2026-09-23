@@ -385,6 +385,8 @@ async function _resolveEffectiveRouting(config, requestedModel) {
         if (providerPoolManager && (providerPoolManager.providerStatus[prefix] || config.providerPools?.[prefix])) {
             effectiveProvider = prefix;
             actualModelName = modelSuffix;
+            // 模型名前缀是用户显式指定的提供商约束
+            config.PROVIDER_EXPLICIT = true;
             logger.info(`[Routing] Prefix resolved: ${prefix}:${modelSuffix}`);
         }
     }

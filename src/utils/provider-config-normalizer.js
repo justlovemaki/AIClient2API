@@ -8,6 +8,12 @@ const PROVIDER_BOOLEAN_CONFIG_FIELDS = [
     'TLS_SIDECAR_ENABLED'
 ];
 
+// 可选数值字段：留空/非法值归一为 null（而非删除字段），
+// 这样 UI 清空后能通过浅合并覆盖掉节点上已存在的旧值
+const PROVIDER_OPTIONAL_NUMBER_CONFIG_FIELDS = [
+    'priority'
+];
+
 function normalizeStringArrayConfigValue(value) {
     if (Array.isArray(value)) {
         return value
@@ -44,6 +50,17 @@ function normalizeStringArrayConfigValue(value) {
     }
 
     return [];
+}
+
+function normalizeOptionalNumberConfigValue(value) {
+    if (value === undefined || value === null || value === '') {
+        return null;
+    }
+    if (typeof value === 'string' && value.trim() === '') {
+        return null;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
 }
 
 function normalizeBooleanConfigValue(value) {
@@ -83,6 +100,12 @@ export function normalizeProviderConfigFields(data) {
     for (const key of PROVIDER_BOOLEAN_CONFIG_FIELDS) {
         if (Object.prototype.hasOwnProperty.call(result, key)) {
             result[key] = normalizeBooleanConfigValue(result[key]);
+        }
+    }
+
+    for (const key of PROVIDER_OPTIONAL_NUMBER_CONFIG_FIELDS) {
+        if (Object.prototype.hasOwnProperty.call(result, key)) {
+            result[key] = normalizeOptionalNumberConfigValue(result[key]);
         }
     }
 

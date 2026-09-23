@@ -3,6 +3,50 @@ import { MODEL_PROVIDER } from '../utils/common.js';
 import { CONFIG } from '../core/config-manager.js';
 
 /**
+ * 判断字符串是否是一个已知的提供商标识（支持 openai-custom-1 这类带后缀的自定义分组）
+ * @param {string} prefix
+ * @returns {boolean}
+ */
+function isKnownProviderPrefix(prefix) {
+    if (!prefix || typeof prefix !== 'string') {
+        return false;
+    }
+    if (CONFIG.providerPools && Object.prototype.hasOwnProperty.call(CONFIG.providerPools, prefix)) {
+        return true;
+    }
+    if (Object.prototype.hasOwnProperty.call(PROVIDER_MODELS, prefix)) {
+        return true;
+    }
+    const knownProviders = Object.values(MODEL_PROVIDER);
+    if (knownProviders.includes(prefix)) {
+        return true;
+    }
+    return knownProviders.some(p => p !== MODEL_PROVIDER.AUTO && prefix.startsWith(`${p}-`));
+}
+
+/**
+ * 拆分 "provider:model" 形式的模型名。
+ * 仅当前缀确实是一个已知提供商时才拆分，避免把模型名自带的冒号误判为提供商前缀。
+ * @param {string} modelId
+ * @returns {{providerPrefix: string|null, modelId: string}}
+ */
+export function splitProviderPrefixedModel(modelId) {
+    if (typeof modelId !== 'string') {
+        return { providerPrefix: null, modelId };
+    }
+    const separatorIndex = modelId.indexOf(':');
+    // 冒号在首尾时不构成合法前缀
+    if (separatorIndex <= 0 || separatorIndex === modelId.length - 1) {
+        return { providerPrefix: null, modelId };
+    }
+    const prefix = modelId.slice(0, separatorIndex);
+    if (!isKnownProviderPrefix(prefix)) {
+        return { providerPrefix: null, modelId };
+    }
+    return { providerPrefix: prefix, modelId: modelId.slice(separatorIndex + 1) };
+}
+
+/**
  * 获取模型配置元数据
  * @param {string} modelId - 模型 ID 或别名
  * @param {string|null} provider - 自定义模型归属的提供商
@@ -13,14 +57,9 @@ export function getCustomModelConfig(modelId, provider = null) {
         return null;
     }
 
-    let targetProvider = provider && provider !== MODEL_PROVIDER.AUTO ? provider : null;
-    let targetModelId = modelId;
-
-    if (typeof modelId === 'string' && modelId.includes(':')) {
-        const [prefix, ...modelParts] = modelId.split(':');
-        targetProvider = prefix;
-        targetModelId = modelParts.join(':');
-    }
+    const { providerPrefix, modelId: targetModelId } = splitProviderPrefixedModel(modelId);
+    const targetProvider = providerPrefix ||
+        (provider && provider !== MODEL_PROVIDER.AUTO ? provider : null);
 
     if (!targetProvider) {
         return CONFIG.customModels.find(m =>
@@ -30,9 +69,49 @@ export function getCustomModelConfig(modelId, provider = null) {
     }
 
     return CONFIG.customModels.find(m =>
-        m.provider === targetProvider &&
+        customModelMatchesProvider(m, targetProvider) &&
         (m.id === targetModelId || m.alias === targetModelId)
     ) || null;
+}
+
+/**
+ * 获取所有匹配的自定义模型配置（多候选优先级路由用）
+ *
+ * 三种语义：
+ * - 模型名带合法提供商前缀（如 `atlascloud:gpt-4o`）：用户硬约束，只返回该提供商下的配置
+ * - 请求显式指定了提供商（header `model-provider` 或路径首段）：只返回该提供商下的配置
+ * - 未显式指定（含 auto、含 config.json 里的默认值）：返回全部同名配置，交由优先级决定走哪条
+ *
+ * @param {string} modelId - 模型 ID 或别名，可带提供商前缀
+ * @param {string|null} provider - 当前生效的提供商
+ * @param {Object} [options]
+ * @param {boolean} [options.providerExplicit] - provider 是否来自用户显式指定（而非配置默认值）
+ * @returns {Array<Object>} 匹配的自定义模型配置列表
+ */
+export function getAllCustomModelConfigs(modelId, provider = null, options = {}) {
+    if (!CONFIG.customModels || !Array.isArray(CONFIG.customModels)) {
+        return [];
+    }
+
+    const { providerPrefix, modelId: targetModelId } = splitProviderPrefixedModel(modelId);
+    const matchesModelId = m => m && (m.id === targetModelId || m.alias === targetModelId);
+
+    // 情况 A：模型名带提供商前缀，必须按前缀过滤
+    if (providerPrefix) {
+        return CONFIG.customModels.filter(m =>
+            matchesModelId(m) && customModelMatchesProvider(m, providerPrefix)
+        );
+    }
+
+    // 情况 B：请求显式指定了提供商，必须按该提供商过滤
+    if (options.providerExplicit && provider && provider !== MODEL_PROVIDER.AUTO) {
+        return CONFIG.customModels.filter(m =>
+            matchesModelId(m) && customModelMatchesProvider(m, provider)
+        );
+    }
+
+    // 情况 C：未显式指定，全部同名自定义模型都是候选
+    return CONFIG.customModels.filter(matchesModelId);
 }
 
 /**
