@@ -173,6 +173,8 @@ export function createRequestHandler(config, providerPoolManager) {
                     if (modelProviderHeader) {
                         if (isRegisteredProvider(modelProviderHeader)) {
                             currentConfig.MODEL_PROVIDER = modelProviderHeader;
+                            // 标记提供商来自用户显式指定，自定义模型路由不会跨提供商选择
+                            currentConfig.PROVIDER_EXPLICIT = true;
                             logger.info(`[Config] MODEL_PROVIDER overridden by header to: ${currentConfig.MODEL_PROVIDER}`);
                         } else {
                             logger.warn(`[Config] Provider ${modelProviderHeader} in header is not available.`);
@@ -191,6 +193,8 @@ export function createRequestHandler(config, providerPoolManager) {
 
                         if (firstSegment && (isValidProvider || isAutoMode)) {
                             currentConfig.MODEL_PROVIDER = firstSegment;
+                            // 标记提供商来自用户显式指定（auto 例外：它本身代表「不指定」）
+                            currentConfig.PROVIDER_EXPLICIT = !isAutoMode;
                             logger.info(`[Config] MODEL_PROVIDER overridden by path segment to: ${currentConfig.MODEL_PROVIDER}`);
                             pathSegments.shift();
                             path = '/' + pathSegments.join('/');
