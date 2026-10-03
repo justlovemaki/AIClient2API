@@ -973,6 +973,94 @@ export async function handleStreamRequest(res, service, model, requestBody, from
     let hasToolCall = false;
     let hasMessageStop = false; // 跟踪是否已经发送过结束标志（message_stop / done）
 
+    // [FIX claude stream protocol] Gemini→Claude 流式转换器输出的事件序列不完整：
+    // 缺 message_start、缺 thinking/text 块的 content_block_start、缺全部 content_block_stop，
+    // 且所有块共用 index:0 交错输出。严格解析 SSE 的客户端（如 ZCode）遇到非法序列会
+    // 判定流损坏并中断。此状态机在写出处把事件序列补全为合规的 Anthropic 流。
+    // 定义在 try 之外，供主转换循环和 finally 收尾（直接写 message_stop 处）共同使用。
+    const claudeStreamState = { started: false, nextIndex: 0, current: null, sawToolUse: false, stopReasonSeen: false };
+    const CLAUDE_DELTA_BLOCK = { thinking_delta: 'thinking', signature_delta: 'thinking', text_delta: 'text', input_json_delta: 'tool_use' };
+    const claudeStreamFix = (chunk, out) => {
+        const t = chunk?.type;
+        const isClaudeEvent = t === 'content_block_delta' || t === 'content_block_start'
+            || t === 'content_block_stop' || t === 'message_delta' || t === 'message_stop';
+        if (isClaudeEvent && !claudeStreamState.started) {
+            claudeStreamState.started = true;
+            out.push({
+                type: 'message_start',
+                message: {
+                    id: `msg_${Date.now().toString(36)}`,
+                    type: 'message', role: 'assistant', model: model,
+                    content: [], stop_reason: null, stop_sequence: null,
+                    usage: { input_tokens: 0, output_tokens: 0 }
+                }
+            });
+        }
+        if (t === 'content_block_delta') {
+            const blockType = CLAUDE_DELTA_BLOCK[chunk.delta?.type] || 'text';
+            if (blockType === 'tool_use') claudeStreamState.sawToolUse = true;
+            if (!claudeStreamState.current || claudeStreamState.current.type !== blockType) {
+                if (claudeStreamState.current) {
+                    out.push({ type: 'content_block_stop', index: claudeStreamState.current.index });
+                }
+                const idx = claudeStreamState.nextIndex++;
+                claudeStreamState.current = { type: blockType, index: idx };
+                // [FIX] Anthropic 协议要求块骨架携带同名字段（ZCode 按此校验）：
+                // thinking 块须含 thinking:""，text 块须含 text:""，缺失会被 zod 判 invalid_type
+                out.push({
+                    type: 'content_block_start',
+                    index: idx,
+                    content_block: blockType === 'tool_use'
+                        ? { type: 'tool_use', id: `toolu_${Date.now().toString(36)}`, name: '', input: {} }
+                        : blockType === 'thinking'
+                            ? { type: 'thinking', thinking: '' }
+                            : { type: 'text', text: '' }
+                });
+            }
+            chunk.index = claudeStreamState.current.index;
+            out.push(chunk);
+            return;
+        }
+        if (t === 'content_block_start') {
+            if (claudeStreamState.current) {
+                out.push({ type: 'content_block_stop', index: claudeStreamState.current.index });
+                claudeStreamState.current = null;
+            }
+            if (chunk.content_block?.type === 'tool_use') claudeStreamState.sawToolUse = true;
+            const idx = claudeStreamState.nextIndex++;
+            if (chunk.content_block) chunk.index = idx;
+            claudeStreamState.current = { type: chunk.content_block?.type || 'text', index: idx };
+            out.push(chunk);
+            return;
+        }
+        if (t === 'message_delta') {
+            if (chunk.delta?.stop_reason) claudeStreamState.stopReasonSeen = true;
+            if (claudeStreamState.current) {
+                out.push({ type: 'content_block_stop', index: claudeStreamState.current.index });
+                claudeStreamState.current = null;
+            }
+            out.push(chunk);
+            return;
+        }
+        if (t === 'message_stop') {
+            if (claudeStreamState.current) {
+                out.push({ type: 'content_block_stop', index: claudeStreamState.current.index });
+                claudeStreamState.current = null;
+            }
+            if (!claudeStreamState.stopReasonSeen) {
+                out.push({
+                    type: 'message_delta',
+                    delta: { stop_reason: claudeStreamState.sawToolUse ? 'tool_use' : 'end_turn' },
+                    usage: { output_tokens: 0 }
+                });
+                claudeStreamState.stopReasonSeen = true;
+            }
+            out.push(chunk);
+            return;
+        }
+        out.push(chunk);
+    };
+
     try {
         // fs.writeFile('request'+Date.now()+'.json', JSON.stringify(requestBody));
         // The service returns a stream in its native format (toProvider).
@@ -1038,7 +1126,16 @@ export async function handleStreamRequest(res, service, model, requestBody, from
             // 处理 chunkToSend 可能是数组或对象的情况
             const chunksToSend = Array.isArray(chunkToSend) ? chunkToSend : [chunkToSend];
 
-            for (const chunk of chunksToSend) {
+            // [FIX claude stream protocol] 输出为 Claude 协议时先补全事件序列
+            let outChunks = chunksToSend;
+            if (addEvent && getProtocolPrefix(fromProvider) === MODEL_PROTOCOL_PREFIX.CLAUDE) {
+                outChunks = [];
+                for (const c of chunksToSend) {
+                    claudeStreamFix(c, outChunks);
+                }
+            }
+
+            for (const chunk of outChunks) {
                 // 再次检查客户端连接状态
                 if (clientDisconnected.value) {
                     break;
@@ -1342,8 +1439,14 @@ export async function handleStreamRequest(res, service, model, requestBody, from
                         // 连接关闭即表示流结束；不要再追加 `event: done` + `data: {}`，否则会触发下游类型校验失败（AI_TypeValidationError）。
                     } else if (clientProtocol === MODEL_PROTOCOL_PREFIX.CLAUDE) {
                         if (!hasMessageStop) {
-                            res.write('event: message_stop\n');
-                            res.write('data: {"type":"message_stop"}\n\n');
+                            // [FIX claude stream protocol] 收尾的 message_stop 也走状态机，
+                            // 补齐最后一个 content_block_stop 与缺失的 stop_reason（message_delta）
+                            const closingChunks = [];
+                            claudeStreamFix({ type: 'message_stop' }, closingChunks);
+                            for (const c of closingChunks) {
+                                res.write(`event: ${c.type}\n`);
+                                res.write(`data: ${JSON.stringify(c)}\n\n`);
+                            }
                             hasMessageStop = true;
                         }
                     } else if (clientProtocol === MODEL_PROTOCOL_PREFIX.GEMINI) {
