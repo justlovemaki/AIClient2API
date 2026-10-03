@@ -30,6 +30,7 @@ const ANTIGRAVITY_BASE_URL_DAILY = 'https://daily-cloudcode-pa.googleapis.com';
 const ANTIGRAVITY_BASE_URL_PROD = 'https://cloudcode-pa.googleapis.com';
 
 const ANTIGRAVITY_API_VERSION = 'v1internal';
+const ANTIGRAVITY_FREE_PLAN_THIRD_PARTY_CUTOFF = Date.UTC(2026, 10, 3);
 const OAUTH_CLIENT_ID = '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com';
 const OAUTH_CLIENT_SECRET = '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';
 const DEFAULT_USER_AGENT = 'antigravity/2.8.1 darwin/arm64';
@@ -64,15 +65,18 @@ const ANTIGRAVITY_CLIENT_TO_UPSTREAM_MODEL = {
     'gemini-3.1-pro-preview': 'gemini-pro-agent',
     'gemini-3.5-flash-high': 'gemini-3.5-flash-low',
     'gemini-3.6-flash': 'gemini-3.6-flash-low',
+    'gemini-3.6-flash-medium': 'gemini-3.6-flash-low',
     'gemini-3.7-flash': 'gemini-3.7-flash-low',
+    'gemini-3.7-flash-medium': 'gemini-3.7-flash-low',
     'gemini-3.8-flash': 'gemini-3.8-flash-low',
+    'gemini-3.8-flash-medium': 'gemini-3.8-flash-low',
 };
 
 const ANTIGRAVITY_UPSTREAM_TO_CLIENT_MODELS = {
     'gemini-pro-agent': ['gemini-3.1-pro-high', 'gemini-3.1-pro-preview'],
-    'gemini-3.6-flash-low': ['gemini-3.6-flash', 'gemini-3.6-flash-low'],
-    'gemini-3.7-flash-low': ['gemini-3.7-flash', 'gemini-3.7-flash-low'],
-    'gemini-3.8-flash-low': ['gemini-3.8-flash', 'gemini-3.8-flash-low'],
+    'gemini-3.6-flash-low': ['gemini-3.6-flash', 'gemini-3.6-flash-low', 'gemini-3.6-flash-medium'],
+    'gemini-3.7-flash-low': ['gemini-3.7-flash', 'gemini-3.7-flash-low', 'gemini-3.7-flash-medium'],
+    'gemini-3.8-flash-low': ['gemini-3.8-flash', 'gemini-3.8-flash-low', 'gemini-3.8-flash-medium'],
 };
 
 const ANTIGRAVITY_CLIENT_MODEL_THINKING_LEVEL = {
@@ -82,8 +86,11 @@ const ANTIGRAVITY_CLIENT_MODEL_THINKING_LEVEL = {
     'gemini-3-pro-high': 'high',
     'gemini-3-pro-preview': 'high',
     'gemini-3.5-flash-high': 'high',
+    'gemini-3.6-flash-medium': 'medium',
     'gemini-3.6-flash-high': 'high',
+    'gemini-3.7-flash-medium': 'medium',
     'gemini-3.7-flash-high': 'high',
+    'gemini-3.8-flash-medium': 'medium',
     'gemini-3.8-flash-high': 'high',
     'gemini-3.1-pro-low': 'low',
     'gemini-3-pro-low': 'low',
@@ -144,6 +151,10 @@ const ANTIGRAVITY_MODEL_METADATA = {
         maxOutputTokens: 65535,
         thinking: { min: 1, max: 65535, dynamicAllowed: true, levels: ['low', 'medium', 'high'] }
     },
+    'gemini-3.6-flash-medium': {
+        maxOutputTokens: 65535,
+        thinking: { min: 1, max: 65535, dynamicAllowed: true, levels: ['low', 'medium', 'high'] }
+    },
     'gemini-3.6-flash-high': {
         maxOutputTokens: 65535,
         thinking: { min: 1, max: 65535, dynamicAllowed: true, levels: ['low', 'medium', 'high'] }
@@ -152,11 +163,19 @@ const ANTIGRAVITY_MODEL_METADATA = {
         maxOutputTokens: 65535,
         thinking: { min: 1, max: 65535, dynamicAllowed: true, levels: ['low', 'medium', 'high'] }
     },
+    'gemini-3.7-flash-medium': {
+        maxOutputTokens: 65535,
+        thinking: { min: 1, max: 65535, dynamicAllowed: true, levels: ['low', 'medium', 'high'] }
+    },
     'gemini-3.7-flash-high': {
         maxOutputTokens: 65535,
         thinking: { min: 1, max: 65535, dynamicAllowed: true, levels: ['low', 'medium', 'high'] }
     },
     'gemini-3.8-flash-low': {
+        maxOutputTokens: 65535,
+        thinking: { min: 1, max: 65535, dynamicAllowed: true, levels: ['low', 'medium', 'high'] }
+    },
+    'gemini-3.8-flash-medium': {
         maxOutputTokens: 65535,
         thinking: { min: 1, max: 65535, dynamicAllowed: true, levels: ['low', 'medium', 'high'] }
     },
@@ -188,6 +207,12 @@ function resolveAntigravityUpstreamModel(modelName) {
         return baseModel.replace('gemini-claude-', 'claude-');
     }
     return ANTIGRAVITY_CLIENT_TO_UPSTREAM_MODEL[baseModel] || baseModel;
+}
+
+export function isAntigravityModelRetired(modelName, now = Date.now()) {
+    const upstreamModel = resolveAntigravityUpstreamModel(modelName);
+    return now >= ANTIGRAVITY_FREE_PLAN_THIRD_PARTY_CUTOFF &&
+        (upstreamModel.startsWith('claude-') || upstreamModel.startsWith('gpt-oss-'));
 }
 
 function expandAntigravityClientModels(upstreamModel) {
@@ -1382,41 +1407,44 @@ export class AntigravityApiService {
     async listModels() {
         if (!this.isInitialized) await this.initialize();
 
-        const now = Math.floor(Date.now() / 1000);
-        const formattedModels = this.availableModels.map(modelId => {
-            const displayName = modelId.split('-').map(word =>
-                word.charAt(0).toUpperCase() + word.slice(1)
-            ).join(' ');
-            const metadata = getAntigravityModelMetadata(modelId);
+        const currentTime = Date.now();
+        const now = Math.floor(currentTime / 1000);
+        const formattedModels = this.availableModels
+            .filter(modelId => !isAntigravityModelRetired(modelId, currentTime))
+            .map(modelId => {
+                const displayName = modelId.split('-').map(word =>
+                    word.charAt(0).toUpperCase() + word.slice(1)
+                ).join(' ');
+                const metadata = getAntigravityModelMetadata(modelId);
 
-            const modelInfo = {
-                name: `models/${modelId}`,
-                version: '1.0.0',
-                displayName: displayName,
-                description: `Antigravity model: ${modelId}`,
-                inputTokenLimit: 1024000,
-                outputTokenLimit: metadata?.maxOutputTokens || 65535,
-                supportedGenerationMethods: ['generateContent', 'streamGenerateContent'],
-                object: 'model',
-                created: now,
-                ownedBy: 'antigravity',
-                type: 'antigravity'
-            };
-
-            if (metadata?.thinking) {
-                modelInfo.thinking = {
-                    min: metadata.thinking.min,
-                    max: metadata.thinking.max,
-                    zeroAllowed: metadata.thinking.zeroAllowed || false,
-                    dynamicAllowed: metadata.thinking.dynamicAllowed || false
+                const modelInfo = {
+                    name: `models/${modelId}`,
+                    version: '1.0.0',
+                    displayName: displayName,
+                    description: `Antigravity model: ${modelId}`,
+                    inputTokenLimit: 1024000,
+                    outputTokenLimit: metadata?.maxOutputTokens || 65535,
+                    supportedGenerationMethods: ['generateContent', 'streamGenerateContent'],
+                    object: 'model',
+                    created: now,
+                    ownedBy: 'antigravity',
+                    type: 'antigravity'
                 };
-                if (metadata.thinking.levels) {
-                    modelInfo.thinking.levels = metadata.thinking.levels;
-                }
-            }
 
-            return modelInfo;
-        });
+                if (metadata?.thinking) {
+                    modelInfo.thinking = {
+                        min: metadata.thinking.min,
+                        max: metadata.thinking.max,
+                        zeroAllowed: metadata.thinking.zeroAllowed || false,
+                        dynamicAllowed: metadata.thinking.dynamicAllowed || false
+                    };
+                    if (metadata.thinking.levels) {
+                        modelInfo.thinking.levels = metadata.thinking.levels;
+                    }
+                }
+
+                return modelInfo;
+            });
 
         return { models: formattedModels };
     }
@@ -1922,6 +1950,9 @@ export class AntigravityApiService {
 
     buildAntigravityPayload(model, requestBody) {
         let selectedModel = normalizeAntigravityModelId(model);
+        if (isAntigravityModelRetired(selectedModel)) {
+            throw new Error(`[Antigravity] Free-plan access to non-Gemini model '${selectedModel}' ended on 2026-11-03.`);
+        }
         if (!this.availableModels.includes(selectedModel) && !isKnownAntigravityModel(selectedModel)) {
             if (this.config.MODEL_FALLBACK_ENABLED === false) {
                 throw new Error(`[Antigravity] 模型不存在: ${model}`);
