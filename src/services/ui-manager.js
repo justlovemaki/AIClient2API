@@ -158,6 +158,13 @@ export async function handleUIApiRequests(method, pathParam, req, res, currentCo
         return await providerApi.handleGetProviderType(req, res, currentConfig, providerPoolManager, providerType);
     }
 
+    const providerQuotaMatch = pathParam.match(/^\/api\/providers\/([^\/]+)\/([^\/]+)\/quota$/);
+    if (method === 'GET' && providerQuotaMatch) {
+        const providerType = decodeURIComponent(providerQuotaMatch[1]);
+        const providerUuid = decodeURIComponent(providerQuotaMatch[2]);
+        return await providerApi.handleGetProviderQuota(req, res, currentConfig, providerPoolManager, providerType, providerUuid);
+    }
+
     // Get available models for all providers or specific provider type
     if (method === 'GET' && pathParam === '/api/provider-models') {
         return await providerApi.handleGetProviderModels(req, res, currentConfig, providerPoolManager);

@@ -5,6 +5,9 @@ import { handleProviderPasswordToggle } from './event-handlers.js';
 import { t } from './i18n.js';
 
 const MANAGED_MODEL_LIST_PROVIDERS = new Set(['openai-custom', 'openaiResponses-custom', 'claude-custom', 'atlascloud', 'qiniu', 'fenno']);
+const COPILOT_QUOTA_CACHE_TTL_MS = 60_000;
+const copilotQuotaCache = new Map();
+const copilotQuotaRequests = new Map();
 
 // 分页配置
 const PROVIDERS_PER_PAGE = 5;
@@ -603,6 +606,9 @@ function goToProviderPage(page) {
     const providerList = document.getElementById('providerList');
     if (providerList) {
         providerList.innerHTML = renderProviderListPaginated(filteredProviders, page);
+        if (currentProviderType === 'github-copilot') {
+            loadCopilotQuotaBadges(providerList);
+        }
     }
     
     // 更新分页控件
@@ -635,6 +641,70 @@ function goToProviderPage(page) {
     } else if (!usesManagedModelList(currentProviderType)) {
         loadModelsForProviderType(currentProviderType, pageProviders);
     }
+}
+
+function renderCopilotQuotaBadge(badge, result) {
+    if (!badge.isConnected) return;
+    if (result.error) {
+        badge.textContent = t('providers.copilotQuota.unavailable');
+        badge.title = t('providers.copilotQuota.unavailable');
+        return;
+    }
+
+    const quota = result.response?.quota;
+    if (!quota?.available) {
+        badge.textContent = t('providers.copilotQuota.unavailable');
+        badge.title = quota?.message || t('providers.copilotQuota.unavailable');
+        return;
+    }
+
+    if (quota.isUnlimited) {
+        badge.textContent = t('providers.copilotQuota.unlimited');
+        badge.title = t('providers.copilotQuota.unlimited');
+        return;
+    }
+
+    const usedPercentage = Math.round(quota.usedPercentage);
+    const resetDate = quota.resetDate
+        ? new Date(quota.resetDate).toLocaleDateString()
+        : t('providers.copilotQuota.unknownReset');
+    badge.textContent = t('providers.copilotQuota.used', { percent: usedPercentage });
+    badge.title = t('providers.copilotQuota.details', {
+        type: quota.quotaType,
+        used: quota.usedRequests,
+        limit: quota.entitlementRequests,
+        reset: resetDate
+    });
+}
+
+function loadCopilotQuotaBadges(container, { requestMissing = true } = {}) {
+    const badges = container.querySelectorAll('.copilot-quota-badge[data-provider-uuid]');
+    badges.forEach((badge) => {
+        const providerUuid = badge.dataset.providerUuid;
+        const cached = copilotQuotaCache.get(providerUuid);
+        if (cached && (Date.now() - cached.cachedAt < COPILOT_QUOTA_CACHE_TTL_MS || !requestMissing)) {
+            renderCopilotQuotaBadge(badge, cached.result);
+            return;
+        }
+
+        badge.textContent = t('providers.copilotQuota.loading');
+        let request = copilotQuotaRequests.get(providerUuid);
+        if (!request) {
+            if (!requestMissing) return;
+            request = window.apiClient.get(
+                `/providers/github-copilot/${encodeURIComponent(providerUuid)}/quota`
+            )
+                .then(response => ({ response }))
+                .catch(() => ({ error: true }))
+                .then(result => {
+                    copilotQuotaCache.set(providerUuid, { cachedAt: Date.now(), result });
+                    return result;
+                })
+                .finally(() => copilotQuotaRequests.delete(providerUuid));
+            copilotQuotaRequests.set(providerUuid, request);
+        }
+        request.then(result => renderCopilotQuotaBadge(badge, result));
+    });
 }
 
 /**
@@ -879,6 +949,7 @@ function renderProviderDetailList(providers) {
                     <div class="provider-info">
                         <div class="provider-name">
                             ${provider.customName || provider.uuid}
+                            ${currentProviderType === 'github-copilot' ? `<span class="copilot-quota-badge" data-provider-uuid="${escapeHtml(provider.uuid)}">${t('providers.copilotQuota.loading')}</span>` : ''}
                             ${needsRefresh ? `<span class="badge badge-warning" style="font-size: 10px; margin-left: 8px; vertical-align: middle;"><i class="fas fa-sync-alt fa-spin"></i> <span data-i18n="providers.status.needsRefresh">${t('providers.status.needsRefresh')}</span></span>` : ''}
                         </div>
                         <div class="provider-meta">
@@ -956,7 +1027,7 @@ function renderProviderCardList(providers) {
             <div class="provider-item-card ${healthClass} ${disabledClass}" data-uuid="${provider.uuid}">
                 <div class="card-header">
                     <div class="card-status-dot"></div>
-                    <div class="card-name" title="${displayName}">${displayName}</div>
+                    <div class="card-name" title="${displayName}">${displayName}${currentProviderType === 'github-copilot' ? `<span class="copilot-quota-badge" data-provider-uuid="${escapeHtml(provider.uuid)}">${t('providers.copilotQuota.loading')}</span>` : ''}</div>
                     ${needsRefresh ? '<i class="fas fa-sync-alt fa-spin card-refresh-icon"></i>' : ''}
                 </div>
                 <div class="card-body">
@@ -1529,7 +1600,7 @@ async function deleteProvider(uuid, event) {
  * 重新获取并刷新提供商配置
  * @param {string} providerType - 提供商类型
  */
-async function refreshProviderConfig(providerType) {
+async function refreshProviderConfig(providerType, { loadCopilotQuotas = false } = {}) {
     try {
         // 重新获取该提供商类型的最新数据
         const data = await window.apiClient.get(`/providers/${encodeURIComponent(providerType)}`);
@@ -1563,6 +1634,9 @@ async function refreshProviderConfig(providerType) {
             const providerList = modal.querySelector('.provider-list');
             if (providerList) {
                 providerList.innerHTML = renderProviderListPaginated(data.providers, currentPage);
+                if (providerType === 'github-copilot') {
+                    loadCopilotQuotaBadges(providerList, { requestMissing: loadCopilotQuotas });
+                }
             }
             
             // 更新分页控件
@@ -1968,7 +2042,7 @@ async function performHealthCheck(providerType) {
             }
             
             // 无论如何都要刷新显示
-            await refreshProviderConfig(providerType);
+            await refreshProviderConfig(providerType, { loadCopilotQuotas: false });
         } else {
             showToast(t('common.error'), t('modal.provider.healthCheck') + ' ' + t('common.error'), 'error');
         }
@@ -2035,7 +2109,7 @@ async function performSingleHealthCheck(uuid, event) {
             await window.apiClient.post('/reload-config');
         }
         
-        await refreshProviderConfig(providerType);
+        await refreshProviderConfig(providerType, { loadCopilotQuotas: false });
     } catch (error) {
         console.error('Single provider health check failed:', error);
         showToast(

@@ -29,11 +29,15 @@
     "GROK_CF_CLEARANCE": "your-cf-clearance-cookie",
     "GROK_USER_AGENT": "Mozilla/5.0 ...",
     "GROK_BASE_URL": "https://grok.com",
+    "GITHUB_COPILOT_API_KEY": "github_pat_your-fine-grained-token",
+    "GITHUB_COPILOT_BASE_URL": "https://api.githubcopilot.com",
+    "USE_SYSTEM_PROXY_GITHUB": false,
     "providerFallbackChain": {
       "gemini-cli-oauth": ["gemini-antigravity"],
       "gemini-antigravity": ["gemini-cli-oauth"],
       "claude-kiro-oauth": ["claude-custom"],
-      "claude-custom": ["claude-kiro-oauth"]
+      "claude-custom": ["claude-kiro-oauth"],
+      "github-copilot": ["openai-custom"]
     },
     "modelFallbackMapping": {
       "gemini-claude-opus-4-5-thinking": {

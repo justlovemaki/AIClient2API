@@ -260,5 +260,35 @@
       "errorCount": 0,
       "lastErrorTime": null
     }
+  ],
+  "github-copilot": [
+    {
+      "customName": "GitHub Copilot API Key节点",
+      "GITHUB_COPILOT_API_KEY": "github_pat_your-first-fine-grained-token",
+      "GITHUB_COPILOT_BASE_URL": "https://api.githubcopilot.com",
+      "uuid": "12345678-1234-5678-1234-567812345678",
+      "checkModelName": null,
+      "checkHealth": false,
+      "isHealthy": true,
+      "isDisabled": false,
+      "lastUsed": null,
+      "usageCount": 0,
+      "errorCount": 0,
+      "lastErrorTime": null
+    },
+    {
+      "customName": "GitHub Copilot PAT Account 2",
+      "GITHUB_COPILOT_API_KEY": "github_pat_your-second-fine-grained-token",
+      "GITHUB_COPILOT_BASE_URL": "https://api.githubcopilot.com",
+      "uuid": "87654321-4321-8765-4321-876543218765",
+      "checkModelName": null,
+      "checkHealth": false,
+      "isHealthy": true,
+      "isDisabled": false,
+      "lastUsed": null,
+      "usageCount": 0,
+      "errorCount": 0,
+      "lastErrorTime": null
+    }
   ]
 }

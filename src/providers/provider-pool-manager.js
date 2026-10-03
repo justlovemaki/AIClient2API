@@ -62,7 +62,8 @@ export class ProviderPoolManager {
         'openaiResponses-custom': 'gpt-5.5',
         'grok-web': 'grok-4.3',
         'grok-cli-oauth': 'grok-4.3',
-        'forward-api': 'gpt-5.5'
+        'forward-api': 'gpt-5.5',
+        'github-copilot': 'gpt-4.1'
     };
 
     constructor(providerPools, options = {}) {

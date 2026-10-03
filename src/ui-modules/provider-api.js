@@ -303,6 +303,52 @@ export async function handleGetProviderType(req, res, currentConfig, providerPoo
 }
 
 /**
+ * Read Copilot quota for one PAT-backed provider node.
+ */
+export async function handleGetProviderQuota(req, res, currentConfig, providerPoolManager, providerType, providerUuid) {
+    if (providerType !== 'github-copilot') {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'Quota lookup is not supported for this provider.' } }));
+        return true;
+    }
+
+    try {
+        const providerPools = loadProviderPools(currentConfig, providerPoolManager);
+        const providerConfig = (providerPools[providerType] || []).find(provider => provider.uuid === providerUuid);
+        if (!providerConfig) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: { message: 'Provider node was not found.' } }));
+            return true;
+        }
+
+        const serviceConfig = {
+            ...currentConfig,
+            ...providerConfig,
+            MODEL_PROVIDER: providerType,
+            uuid: providerUuid
+        };
+        delete serviceConfig.providerPools;
+
+        const serviceAdapter = getServiceAdapter(serviceConfig);
+        if (typeof serviceAdapter.getQuota !== 'function') {
+            res.writeHead(501, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: { message: 'Quota lookup is not supported by this adapter.' } }));
+            return true;
+        }
+
+        const quota = await serviceAdapter.getQuota();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ providerType, providerUuid, quota }));
+        return true;
+    } catch (error) {
+        logger.warn(`[UI API] Copilot quota lookup failed for provider ${providerUuid}: ${error.message}`);
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'Unable to retrieve GitHub Copilot quota.' } }));
+        return true;
+    }
+}
+
+/**
  * 获取支持的提供商类型（已注册适配器的，以及号池中已存在的自定义类型）
  */
 export async function handleGetSupportedProviders(req, res, currentConfig, providerPoolManager) {

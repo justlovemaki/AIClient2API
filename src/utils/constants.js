@@ -52,6 +52,7 @@ export const MODEL_PROTOCOL_PREFIX = {
     CODEX: 'codex',
     FORWARD: 'forward',
     GROK: 'grok',
+    GITHUB: 'github',
 };
 
 // 提供商标识符常量
@@ -71,6 +72,7 @@ export const MODEL_PROVIDER = {
     FORWARD_API: 'forward-api',
     GROK_WEB: 'grok-web',
     GROK_CLI: 'grok-cli-oauth',
+    GITHUB_COPILOT: 'github-copilot',
     AUTO: 'auto',
 };
 

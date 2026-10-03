@@ -176,6 +176,10 @@ export const PROVIDER_MODELS = {
         'grok-imagine-1.0-edit',
         'grok-imagine-1.0-fast',
         'grok-imagine-1.0-fast-edit',
+    ],
+    'github-copilot': [
+        'gpt-4.1',
+        'auto'
     ]
 };
 
@@ -185,7 +189,8 @@ export const MANAGED_MODEL_LIST_PROVIDERS = [
     'claude-custom',
     'atlascloud',
     'qiniu',
-    'fenno'
+    'fenno',
+    'github-copilot'
 ];
 
 export function getManagedModelListProviderType(providerType) {

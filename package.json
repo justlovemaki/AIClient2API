@@ -5,6 +5,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^3.0.115",
     "@anthropic-ai/tokenizer": "^0.0.4",
+    "@github/copilot-sdk": "1.0.16",
     "adm-zip": "^0.6.1",
     "ai": "^6.0.288",
     "axios": "^1.18.0",

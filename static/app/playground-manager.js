@@ -19,6 +19,7 @@ function el(id) {
 
 function getProviderSelect() { return el('pg-provider-select'); }
 function getModelSelect()    { return el('pg-model-select'); }
+function getCopilotAutoTierSelect() { return el('pg-copilot-auto-tier'); }
 function getInterfaceSelect(){ return el('pg-interface-select'); }
 function getInput()          { return el('pg-input'); }
 function getSendBtn()        { return el('pg-send-btn'); }
@@ -146,6 +147,12 @@ function bindEvents() {
     });
 
     document.addEventListener('change', (e) => {
+        if (e.target.id === 'pg-copilot-auto-tier') {
+            localStorage.setItem('pg_copilot_auto_tier', e.target.value);
+        }
+    });
+
+    document.addEventListener('change', (e) => {
         if (e.target.id === 'pg-interface-select') {
             const isChat = e.target.value === 'chat';
             const streamBox = getStreamCheckbox();
@@ -207,6 +214,15 @@ function bindEvents() {
 function onProviderChange(providerType) {
     const modelSel = getModelSelect();
     if (!modelSel) return;
+    const autoTierSection = el('pg-copilot-auto-tier-section');
+    const autoTierSelect = getCopilotAutoTierSelect();
+    if (autoTierSection) {
+        autoTierSection.style.display = providerType === 'github-copilot' ? '' : 'none';
+    }
+    if (autoTierSelect) {
+        const savedTier = localStorage.getItem('pg_copilot_auto_tier');
+        autoTierSelect.value = ['efficiency', 'balance', 'intelligence'].includes(savedTier) ? savedTier : 'balance';
+    }
 
     if (!providerType) {
         modelSel.innerHTML = `<option value="">${t('playground.providerFirst')}</option>`;
@@ -296,6 +312,7 @@ async function handleSend() {
     const temp = parseFloat(getTempSlider()?.value || '0.7');
     const maxTokens = parseInt(getMaxTokens()?.value || '4096');
     const useStream = getStreamCheckbox()?.checked ?? true;
+    const autoTier = provider === 'github-copilot' ? getCopilotAutoTierSelect()?.value || 'balance' : undefined;
 
     // Build history for request
     const requestMessages = [];
@@ -328,13 +345,15 @@ async function handleSend() {
         await streamResponse(provider, model, assistantBubble, {
             messages: requestMessages,
             temperature: temp,
-            max_tokens: maxTokens
+            max_tokens: maxTokens,
+            auto_tier: autoTier
         });
     } else {
         await unaryResponse(provider, model, assistantBubble, {
             messages: requestMessages,
             temperature: temp,
-            max_tokens: maxTokens
+            max_tokens: maxTokens,
+            auto_tier: autoTier
         });
     }
 }
@@ -457,6 +476,7 @@ async function unaryResponse(provider, model, bubble, params) {
                 messages: params.messages,
                 temperature: params.temperature,
                 max_tokens: params.max_tokens,
+                auto_tier: params.auto_tier,
                 stream: false
             }),
             signal: currentAbortController.signal
@@ -532,6 +552,7 @@ async function streamResponse(provider, model, bubble, params) {
                 messages: params.messages,
                 temperature: params.temperature,
                 max_tokens: params.max_tokens,
+                auto_tier: params.auto_tier,
                 stream: true
             }),
             signal: currentAbortController.signal
