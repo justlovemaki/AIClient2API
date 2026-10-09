@@ -152,6 +152,23 @@ describe('tool_result 图片处理（#717 / #718 共用修复）', () => {
         expect(() => converter.toGeminiRequest(req)).not.toThrow();
     });
 
+    test('六张 base64 工具图片：只保留最近五张，最早图片转合法文本且无 omitted 字段', () => {
+        const req = makeRequest(Array.from({ length: 6 }, (_, index) => ({
+            type: 'image',
+            source: { type: 'base64', media_type: 'image/png', data: `${BASE64_PNG}${index}` }
+        })));
+        const out = converter.toGeminiRequest(req);
+        const inline = findInlineData(out);
+        expect(inline).toHaveLength(5);
+        expect(inline.map(part => part.data)).toEqual(expect.arrayContaining([
+            `${BASE64_PNG}1`, `${BASE64_PNG}2`, `${BASE64_PNG}3`, `${BASE64_PNG}4`, `${BASE64_PNG}5`
+        ]));
+
+        const allParts = out.contents.flatMap(content => content.parts);
+        expect(allParts.some(part => part.text?.startsWith('[Earlier image omitted:'))).toBe(true);
+        expect(JSON.stringify(out)).not.toContain('"omitted"');
+    });
+
     test('function name 仍按 tool_use id 精确映射（#717 原始目标不回退）', () => {
         const url = 'https://example.com/x.png';
         const req = makeRequest([

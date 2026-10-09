@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as http from 'http'; // Add http for IncomingMessage and ServerResponse types
 import * as crypto from 'crypto'; // Import crypto for MD5 hashing
 import logger from './logger.js';
-import { convertData, getOpenAIStreamChunkStop } from '../convert/convert.js';
+import { convertData, getOpenAIStreamChunkStop, releaseStreamState } from '../convert/convert.js';
 import { ProviderStrategyFactory } from './provider-strategies.js';
 import { getPluginManager } from '../core/plugin-manager.js';
 import { MODEL_PROTOCOL_PREFIX, MODEL_PROVIDER } from './constants.js';
@@ -973,11 +973,202 @@ export async function handleStreamRequest(res, service, model, requestBody, from
 
     let hasToolCall = false;
     let hasMessageStop = false; // 跟踪是否已经发送过结束标志（message_stop / done）
+    // finally 必须能访问这两个值：客户端 close、上游 throw 和无终止块 EOF 都要释放状态。
+    // generateContentStream 初始化失败前 streamRequestId 仍为空，安全跳过清理。
+    let needsConversion = false;
+    let streamRequestId = null;
+    const clientProtocol = getProtocolPrefix(fromProvider);
+    let shouldNormalizeClaudeStream = false;
+
+    // 只用于“转换后输出为 Claude”的流。原生 Claude 流不进入该状态机，必须原样透传。
+    // 重试帧复用同一个状态，避免首次空流后重试产生第二个 message_start 或遗失 block stop。
+    const claudeStreamState = retryContext?.claudeStreamState || {
+        started: false,
+        nextIndex: 0,
+        current: null,
+        open: new Map(),
+        indexesUnreliable: false,
+        sawToolUse: false,
+        stopReasonSeen: false,
+        messageStopSent: false
+    };
+    const isClaudeToolBlock = type => type === 'tool_use' || type === 'server_tool_use';
+    const CLAUDE_DELTA_BLOCK = {
+        thinking_delta: 'thinking',
+        signature_delta: 'thinking',
+        text_delta: 'text'
+    };
+    const claudeStreamFix = (chunk, out) => {
+        const eventType = chunk?.type;
+        if (!eventType) {
+            out.push(chunk);
+            return;
+        }
+
+        const closeBlock = block => {
+            if (!block) return;
+            out.push({ type: 'content_block_stop', index: block.index });
+            claudeStreamState.open.delete(block.sourceIndex);
+            if (claudeStreamState.current === block) claudeStreamState.current = null;
+        };
+        const closeCurrent = () => closeBlock(claudeStreamState.current);
+        const closeAllOpen = () => {
+            for (const block of claudeStreamState.open.values()) {
+                out.push({ type: 'content_block_stop', index: block.index });
+            }
+            claudeStreamState.open.clear();
+            claudeStreamState.current = null;
+        };
+        const ensureMessageStart = () => {
+            if (claudeStreamState.started) return;
+            claudeStreamState.started = true;
+            out.push({
+                type: 'message_start',
+                message: {
+                    id: `msg_${Date.now().toString(36)}`,
+                    type: 'message',
+                    role: 'assistant',
+                    model,
+                    content: [],
+                    stop_reason: null,
+                    stop_sequence: null,
+                    usage: { input_tokens: 0, output_tokens: 0 }
+                }
+            });
+        };
+        const startSyntheticBlock = blockType => {
+            const index = claudeStreamState.nextIndex++;
+            claudeStreamState.current = { index, type: blockType, toolId: null };
+            if (isClaudeToolBlock(blockType)) claudeStreamState.sawToolUse = true;
+            out.push({
+                type: 'content_block_start',
+                index,
+                content_block: blockType === 'thinking'
+                    ? { type: 'thinking', thinking: '' }
+                    : { type: 'text', text: '' }
+            });
+        };
+
+        // Converted streams normally do not include this event, but preserve one if a converter does.
+        if (eventType === 'message_start') {
+            if (!claudeStreamState.started) {
+                claudeStreamState.started = true;
+                out.push(chunk);
+            }
+            return;
+        }
+
+        ensureMessageStart();
+
+        if (eventType === 'content_block_start') {
+            const blockType = chunk.content_block?.type || 'text';
+            const suppliedIndex = Number.isInteger(chunk.index) ? chunk.index : null;
+            const sourceKnown = suppliedIndex !== null && !claudeStreamState.open.has(suppliedIndex);
+            const sourceIndex = sourceKnown ? suppliedIndex : claudeStreamState.nextIndex;
+            // Gemini repeats index 0 for every call. Once an index is reused it is not an identity,
+            // so later argument fragments follow the call that just opened.
+            if (suppliedIndex !== null && claudeStreamState.open.has(suppliedIndex)) {
+                claudeStreamState.indexesUnreliable = true;
+            }
+            if (!isClaudeToolBlock(blockType)) closeCurrent();
+
+            const index = claudeStreamState.nextIndex++;
+            const block = chunk.content_block ? { ...chunk.content_block } : { type: blockType, text: '' };
+            if (blockType === 'thinking' && typeof block.thinking !== 'string') block.thinking = '';
+            if (blockType === 'text' && typeof block.text !== 'string') block.text = '';
+            const opened = {
+                index,
+                sourceIndex,
+                type: blockType,
+                toolId: isClaudeToolBlock(blockType) ? block.id || null : null,
+                ownsSourceIndex: sourceKnown
+            };
+            claudeStreamState.open.set(sourceIndex, opened);
+            claudeStreamState.current = opened;
+            if (isClaudeToolBlock(blockType)) claudeStreamState.sawToolUse = true;
+            out.push({ ...chunk, index, content_block: block });
+            return;
+        }
+
+        if (eventType === 'content_block_delta') {
+            const deltaType = chunk.delta?.type;
+            if (deltaType === 'input_json_delta') {
+                const addressed = Number.isInteger(chunk.index) ? claudeStreamState.open.get(chunk.index) : null;
+                // A source index identifies a call only while indexes are unique.
+                // Gemini repeats 0, so only its first call claims 0; later calls follow current.
+                const target = !claudeStreamState.indexesUnreliable
+                    && addressed?.ownsSourceIndex
+                    && isClaudeToolBlock(addressed.type)
+                    ? addressed
+                    : null;
+                if (target) {
+                    claudeStreamState.current = target;
+                    out.push({ ...chunk, index: target.index });
+                } else if (claudeStreamState.current && isClaudeToolBlock(claudeStreamState.current.type)) {
+                    out.push({ ...chunk, index: claudeStreamState.current.index });
+                } else {
+                    closeCurrent();
+                    startSyntheticBlock('text');
+                    out.push({
+                        type: 'content_block_delta',
+                        index: claudeStreamState.current.index,
+                        delta: { type: 'text_delta', text: chunk.delta?.partial_json || '' }
+                    });
+                }
+                return;
+            }
+
+            const blockType = CLAUDE_DELTA_BLOCK[deltaType] || 'text';
+            if (!claudeStreamState.current || claudeStreamState.current.type !== blockType) {
+                closeCurrent();
+                startSyntheticBlock(blockType);
+            }
+            out.push({ ...chunk, index: claudeStreamState.current.index });
+            return;
+        }
+
+        if (eventType === 'content_block_stop') {
+            const addressed = Number.isInteger(chunk.index) ? claudeStreamState.open.get(chunk.index) : null;
+            if (!claudeStreamState.indexesUnreliable && addressed?.ownsSourceIndex) closeBlock(addressed);
+            else closeCurrent();
+            return;
+        }
+
+        if (eventType === 'message_delta') {
+            closeAllOpen();
+            if (chunk.delta?.stop_reason) claudeStreamState.stopReasonSeen = true;
+            out.push(chunk);
+            return;
+        }
+
+        if (eventType === 'message_stop') {
+            if (claudeStreamState.open.size === 0) closeCurrent();
+            closeAllOpen();
+            if (!claudeStreamState.stopReasonSeen) {
+                out.push({
+                    type: 'message_delta',
+                    delta: { stop_reason: claudeStreamState.sawToolUse ? 'tool_use' : 'end_turn' },
+                    usage: { output_tokens: 0 }
+                });
+                claudeStreamState.stopReasonSeen = true;
+            }
+            if (!claudeStreamState.messageStopSent) {
+                out.push(chunk);
+                claudeStreamState.messageStopSent = true;
+            }
+            return;
+        }
+
+        out.push(chunk);
+    };
 
     try {
         // fs.writeFile('request'+Date.now()+'.json', JSON.stringify(requestBody));
         // The service returns a stream in its native format (toProvider).
-        const needsConversion = getProtocolPrefix(fromProvider) !== getProtocolPrefix(toProvider);
+        needsConversion = getProtocolPrefix(fromProvider) !== getProtocolPrefix(toProvider);
+        // 在创建 generator 前确定：若首次尝试空流/初始化失败后递归重试，外层 finally
+        // 仍需知道它负责的是转换后的 Claude 流，才能用共享状态完成收尾。
+        shouldNormalizeClaudeStream = clientProtocol === MODEL_PROTOCOL_PREFIX.CLAUDE && needsConversion;
         requestBody.model = model;
         const nativeStream = await service.generateContentStream(model, requestBody);
         
@@ -986,9 +1177,9 @@ export async function handleStreamRequest(res, service, model, requestBody, from
         if (requestBody.model && requestBody.model !== model) {
             model = requestBody.model;
         }
-        const addEvent = getProtocolPrefix(fromProvider) === MODEL_PROTOCOL_PREFIX.CLAUDE || getProtocolPrefix(fromProvider) === MODEL_PROTOCOL_PREFIX.OPENAI_RESPONSES;
-        // 为每个请求生成唯一 ID，用于在单例 converter 中隔离并发流状态
-        const streamRequestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+        const addEvent = clientProtocol === MODEL_PROTOCOL_PREFIX.CLAUDE || clientProtocol === MODEL_PROTOCOL_PREFIX.OPENAI_RESPONSES;
+        // 为每个请求生成唯一 ID，用于在单例 converter 中隔离并发流状态。
+        streamRequestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
         for await (const nativeChunk of nativeStream) {
             // 检查客户端是否已断开连接
@@ -1036,10 +1227,17 @@ export async function handleStreamRequest(res, service, model, requestBody, from
                 continue;
             }
 
-            // 处理 chunkToSend 可能是数组或对象的情况
+            // 处理 chunkToSend 可能是数组或对象的情况。
             const chunksToSend = Array.isArray(chunkToSend) ? chunkToSend : [chunkToSend];
+            let outChunks = chunksToSend;
+            if (shouldNormalizeClaudeStream) {
+                outChunks = [];
+                for (const convertedChunk of chunksToSend) {
+                    claudeStreamFix(convertedChunk, outChunks);
+                }
+            }
 
-            for (const chunk of chunksToSend) {
+            for (const chunk of outChunks) {
                 // 再次检查客户端连接状态
                 if (clientDisconnected.value) {
                     break;
@@ -1180,7 +1378,8 @@ export async function handleStreamRequest(res, service, model, requestBody, from
                     maxRetries,
                     responseFailureRetry,
                     clientDisconnected,
-                    anyDataSent
+                    anyDataSent,
+                    claudeStreamState
                 };
 
                 return await handleStreamRequest(
@@ -1278,7 +1477,8 @@ export async function handleStreamRequest(res, service, model, requestBody, from
                         currentRetry: currentRetry + 1,
                         maxRetries,
                         clientDisconnected,  // 传递断开状态
-                        anyDataSent          // 传递数据发送状态
+                        anyDataSent,         // 传递数据发送状态
+                        claudeStreamState
                     };
                     
                     // 递归调用，使用新的服务
@@ -1316,6 +1516,14 @@ export async function handleStreamRequest(res, service, model, requestBody, from
         }
         responseClosed = true;
     } finally {
+        // 单例转换器中的 Gemini → OpenAI 状态不能只依赖上游 finishReason 清理。
+        // 客户端 close、上游 throw、无终止块 EOF 都会绕过转换器的正常终止分支。
+        // 状态保存在“来源协议”的转换器内：Gemini → OpenAI 时必须释放 GeminiConverter，
+        // 不能传客户端 fromProvider（OpenAI）或未归一化的 provider 名。
+        if (needsConversion && streamRequestId) {
+            releaseStreamState(getProtocolPrefix(toProvider), streamRequestId);
+        }
+
         // 释放并发插槽
         if (providerPoolManager && pooluuid) {
             providerPoolManager.releaseSlot(toProvider, pooluuid);
@@ -1342,7 +1550,16 @@ export async function handleStreamRequest(res, service, model, requestBody, from
                         // OpenAI Responses 以 response.completed/response.incomplete（或 error）作为结束事件。
                         // 连接关闭即表示流结束；不要再追加 `event: done` + `data: {}`，否则会触发下游类型校验失败（AI_TypeValidationError）。
                     } else if (clientProtocol === MODEL_PROTOCOL_PREFIX.CLAUDE) {
-                        if (!hasMessageStop) {
+                        if (shouldNormalizeClaudeStream) {
+                            const closingChunks = [];
+                            claudeStreamFix({ type: 'message_stop' }, closingChunks);
+                            for (const closingChunk of closingChunks) {
+                                res.write(`event: ${closingChunk.type}\n`);
+                                res.write(`data: ${JSON.stringify(closingChunk)}\n\n`);
+                            }
+                            hasMessageStop = claudeStreamState.messageStopSent;
+                        } else if (!hasMessageStop) {
+                            // Native Claude stream: no normalization, only add the missing outer stop marker.
                             res.write('event: message_stop\n');
                             res.write('data: {"type":"message_stop"}\n\n');
                             hasMessageStop = true;
