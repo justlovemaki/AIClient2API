@@ -165,6 +165,24 @@ export class GeminiConverter extends BaseConverter {
     constructor() {
         super('gemini');
         this.openAIResponsesStreamStates = new Map();
+        // Gemini → OpenAI 流的按请求状态：稳定 chunk id、跨 chunk 的 tool_calls index。
+        // 单例转换器会服务并发请求，状态必须显式按 requestId 隔离和释放。
+        this.openAIStreamStates = new Map();
+    }
+
+    /**
+     * 显式释放一次 Gemini → OpenAI 流的状态。
+     *
+     * 正常 STOP 会在转换器内自动清理；客户端中断、上游 throw 或无终止块 EOF 时，
+     * 由 common.js 的 finally 调用本方法，避免单例 Map 残留。
+     */
+    releaseOpenAIStreamState(requestId = null) {
+        this.openAIStreamStates.delete(requestId || 'default');
+    }
+
+    /** 供生命周期回归测试断言状态没有泄漏。 */
+    openAIStreamStateCount() {
+        return this.openAIStreamStates.size;
     }
 
     /**
@@ -211,7 +229,7 @@ export class GeminiConverter extends BaseConverter {
     convertStreamChunk(chunk, targetProtocol, model, requestId) {
         switch (targetProtocol) {
             case MODEL_PROTOCOL_PREFIX.OPENAI:
-                return this.toOpenAIStreamChunk(chunk, model);
+                return this.toOpenAIStreamChunk(chunk, model, requestId);
             case MODEL_PROTOCOL_PREFIX.CLAUDE:
                 return this.toClaudeStreamChunk(chunk, model);
             case MODEL_PROTOCOL_PREFIX.OPENAI_RESPONSES:
@@ -376,11 +394,28 @@ export class GeminiConverter extends BaseConverter {
     /**
      * Gemini流式响应 -> OpenAI流式响应
      */
-    toOpenAIStreamChunk(geminiChunk, model) {
+    toOpenAIStreamChunk(geminiChunk, model, requestId = null) {
         if (!geminiChunk) return null;
 
         const candidate = geminiChunk.candidates?.[0];
         if (!candidate) return null;
+
+        // Gemini 会把并行 functionCall 拆成多个 chunk。OpenAI 客户端却按同一
+        // chunk.id 与 tool_calls[].index 合并增量，因此状态必须跨 chunk、按请求保存。
+        // 兼容入口缺 requestId 时保留 default 槽，但只警告一次，不能假装它能隔离并发。
+        const stateKey = requestId || 'default';
+        if (!requestId && !this.__warnedDefaultOpenAIStreamState) {
+            this.__warnedDefaultOpenAIStreamState = true;
+            console.warn('[GeminiConverter] toOpenAIStreamChunk missing requestId; concurrent streams share the default state');
+        }
+        if (!this.openAIStreamStates.has(stateKey)) {
+            this.openAIStreamStates.set(stateKey, {
+                chunkId: `chatcmpl-${uuidv4()}`,
+                toolCallIndex: 0,
+                sawToolCall: false
+            });
+        }
+        const streamState = this.openAIStreamStates.get(stateKey);
 
         let content = '';
         let reasoning_content = '';
@@ -406,7 +441,7 @@ export class GeminiConverter extends BaseConverter {
                 if (part.functionCall) {
                     sawPart = true;
                     toolCalls.push({
-                        index: toolCalls.length,
+                        index: streamState.toolCallIndex++,
                         id: part.functionCall.id || `call_${uuidv4()}`,
                         type: 'function',
                         function: {
@@ -422,6 +457,10 @@ export class GeminiConverter extends BaseConverter {
                     sawPart = true;
                 }
             }
+        }
+
+        if (toolCalls.length > 0) {
+            streamState.sawToolCall = true;
         }
 
         // 处理finishReason
@@ -441,12 +480,10 @@ export class GeminiConverter extends BaseConverter {
                 'MODEL_ARMOR': 'content_filter',
             };
             finishReason = finishReasonMap[candidate.finishReason] || 'stop';
-        }
-
-        // [FIX] 适配 Gemini 流式：Gemini 的最后一条流式消息通常不带 functionCall
-        // 如果当前 chunk 包含工具调用，直接将其标记为 tool_calls
-        if (toolCalls.length > 0) {
-            finishReason = 'tool_calls';
+            // 工具调用数据块本身必须保持 finish_reason=null；只在原生终止块上报告 tool_calls。
+            if (finishReason === 'stop' && streamState.sawToolCall) {
+                finishReason = 'tool_calls';
+            }
         }
 
         // 构建delta对象
@@ -463,7 +500,7 @@ export class GeminiConverter extends BaseConverter {
         }
 
         const chunk = {
-            id: `chatcmpl-${uuidv4()}`,
+            id: streamState.chunkId,
             object: "chat.completion.chunk",
             created: Math.floor(Date.now() / 1000),
             model: model,
@@ -473,6 +510,11 @@ export class GeminiConverter extends BaseConverter {
                 finish_reason: finishReason,
             }],
         };
+
+        // 正常终止时转换器自行清理；其它退出路径由 common.js finally 显式清理。
+        if (candidate.finishReason) {
+            this.releaseOpenAIStreamState(stateKey);
+        }
 
         if(geminiChunk.usageMetadata){
             chunk.usage = {

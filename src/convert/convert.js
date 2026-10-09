@@ -112,14 +112,27 @@ export function toOpenAIChatCompletionFromClaude(claudeResponse, model) {
     return converter.toOpenAIResponse(claudeResponse, model);
 }
 
-export function toOpenAIStreamChunkFromGemini(geminiChunk, model) {
-    const converter = ConverterFactory.getConverter(MODEL_PROTOCOL_PREFIX.GEMINI);
-    return converter.toOpenAIStreamChunk(geminiChunk, model);
+/**
+ * Release per-request stream state held by a singleton source converter.
+ * A missing converter/state is intentionally non-fatal during stream cleanup.
+ */
+export function releaseStreamState(sourceProtocol, requestId = null) {
+    try {
+        const converter = ConverterFactory.getConverter(sourceProtocol);
+        converter?.releaseOpenAIStreamState?.(requestId);
+    } catch {
+        // Conversion state cleanup must never replace the original stream error.
+    }
 }
 
-export function toOpenAIStreamChunkFromClaude(claudeChunk, model) {
+export function toOpenAIStreamChunkFromGemini(geminiChunk, model, requestId = null) {
+    const converter = ConverterFactory.getConverter(MODEL_PROTOCOL_PREFIX.GEMINI);
+    return converter.toOpenAIStreamChunk(geminiChunk, model, requestId);
+}
+
+export function toOpenAIStreamChunkFromClaude(claudeChunk, model, requestId = null) {
     const converter = ConverterFactory.getConverter(MODEL_PROTOCOL_PREFIX.CLAUDE);
-    return converter.toOpenAIStreamChunk(claudeChunk, model);
+    return converter.toOpenAIStreamChunk(claudeChunk, model, requestId);
 }
 
 export function toOpenAIModelListFromGemini(geminiModels) {

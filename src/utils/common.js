@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as http from 'http'; // Add http for IncomingMessage and ServerResponse types
 import * as crypto from 'crypto'; // Import crypto for MD5 hashing
 import logger from './logger.js';
-import { convertData, getOpenAIStreamChunkStop } from '../convert/convert.js';
+import { convertData, getOpenAIStreamChunkStop, releaseStreamState } from '../convert/convert.js';
 import { ProviderStrategyFactory } from './provider-strategies.js';
 import { getPluginManager } from '../core/plugin-manager.js';
 import { MODEL_PROTOCOL_PREFIX, MODEL_PROVIDER } from './constants.js';
@@ -973,11 +973,15 @@ export async function handleStreamRequest(res, service, model, requestBody, from
 
     let hasToolCall = false;
     let hasMessageStop = false; // 跟踪是否已经发送过结束标志（message_stop / done）
+    // finally 必须能访问这两个值：客户端 close、上游 throw 和无终止块 EOF 都要释放状态。
+    // generateContentStream 初始化失败前 streamRequestId 仍为空，安全跳过清理。
+    let needsConversion = false;
+    let streamRequestId = null;
 
     try {
         // fs.writeFile('request'+Date.now()+'.json', JSON.stringify(requestBody));
         // The service returns a stream in its native format (toProvider).
-        const needsConversion = getProtocolPrefix(fromProvider) !== getProtocolPrefix(toProvider);
+        needsConversion = getProtocolPrefix(fromProvider) !== getProtocolPrefix(toProvider);
         requestBody.model = model;
         const nativeStream = await service.generateContentStream(model, requestBody);
         
@@ -987,8 +991,8 @@ export async function handleStreamRequest(res, service, model, requestBody, from
             model = requestBody.model;
         }
         const addEvent = getProtocolPrefix(fromProvider) === MODEL_PROTOCOL_PREFIX.CLAUDE || getProtocolPrefix(fromProvider) === MODEL_PROTOCOL_PREFIX.OPENAI_RESPONSES;
-        // 为每个请求生成唯一 ID，用于在单例 converter 中隔离并发流状态
-        const streamRequestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+        // 为每个请求生成唯一 ID，用于在单例 converter 中隔离并发流状态。
+        streamRequestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
         for await (const nativeChunk of nativeStream) {
             // 检查客户端是否已断开连接
@@ -1316,6 +1320,14 @@ export async function handleStreamRequest(res, service, model, requestBody, from
         }
         responseClosed = true;
     } finally {
+        // 单例转换器中的 Gemini → OpenAI 状态不能只依赖上游 finishReason 清理。
+        // 客户端 close、上游 throw、无终止块 EOF 都会绕过转换器的正常终止分支。
+        // 状态保存在“来源协议”的转换器内：Gemini → OpenAI 时必须释放 GeminiConverter，
+        // 不能传客户端 fromProvider（OpenAI）或未归一化的 provider 名。
+        if (needsConversion && streamRequestId) {
+            releaseStreamState(getProtocolPrefix(toProvider), streamRequestId);
+        }
+
         // 释放并发插槽
         if (providerPoolManager && pooluuid) {
             providerPoolManager.releaseSlot(toProvider, pooluuid);
