@@ -305,8 +305,25 @@ export async function handleGetProviderType(req, res, currentConfig, providerPoo
 /**
  * Read Copilot quota for one PAT-backed provider node.
  */
+export function normalizeAntigravityQuota(usage) {
+    const models = usage?.models && typeof usage.models === 'object' ? usage.models : {};
+    const usedPercentages = Object.values(models)
+        .map(model => model?.quotaInfo?.remainingFraction)
+        .filter(remainingFraction => typeof remainingFraction === 'number' && Number.isFinite(remainingFraction))
+        .map(remainingFraction => Math.max(0, Math.min(100, (1 - remainingFraction) * 100)));
+
+    if (usedPercentages.length === 0) {
+        return { available: false, usedPercentage: null };
+    }
+
+    return {
+        available: true,
+        usedPercentage: usedPercentages.reduce((sum, percentage) => sum + percentage, 0) / usedPercentages.length
+    };
+}
+
 export async function handleGetProviderQuota(req, res, currentConfig, providerPoolManager, providerType, providerUuid) {
-    if (providerType !== 'github-copilot') {
+    if (!['github-copilot', 'gemini-antigravity'].includes(providerType)) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: { message: 'Quota lookup is not supported for this provider.' } }));
         return true;
@@ -330,20 +347,22 @@ export async function handleGetProviderQuota(req, res, currentConfig, providerPo
         delete serviceConfig.providerPools;
 
         const serviceAdapter = getServiceAdapter(serviceConfig);
-        if (typeof serviceAdapter.getQuota !== 'function') {
+        const quotaMethod = providerType === 'gemini-antigravity' ? 'getUsageLimits' : 'getQuota';
+        if (typeof serviceAdapter[quotaMethod] !== 'function') {
             res.writeHead(501, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: { message: 'Quota lookup is not supported by this adapter.' } }));
             return true;
         }
 
-        const quota = await serviceAdapter.getQuota();
+        const usage = await serviceAdapter[quotaMethod]();
+        const quota = providerType === 'gemini-antigravity' ? normalizeAntigravityQuota(usage) : usage;
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ providerType, providerUuid, quota }));
         return true;
     } catch (error) {
-        logger.warn(`[UI API] Copilot quota lookup failed for provider ${providerUuid}: ${error.message}`);
+        logger.warn(`[UI API] ${providerType} quota lookup failed for provider ${providerUuid}: ${error.message}`);
         res.writeHead(502, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: { message: 'Unable to retrieve GitHub Copilot quota.' } }));
+        res.end(JSON.stringify({ error: { message: 'Unable to retrieve provider quota.' } }));
         return true;
     }
 }

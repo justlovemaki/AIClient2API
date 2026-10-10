@@ -11,6 +11,9 @@ import { updateUsageProviderConfigs } from './usage-manager.js';
 import { updateConfigProviderConfigs } from './config-manager.js';
 import { loadConfigList, updateProviderFilterOptions } from './upload-config-manager.js';
 import { setServiceMode } from './event-handlers.js';
+import { createAntigravityQuotaUsageLoader } from './antigravity-quota-summary.js';
+
+const loadAntigravityQuotaUsage = createAntigravityQuotaUsageLoader({ apiClient: window.apiClient });
 
 // 保存初始服务器时间和运行时间
 let initialServerTime = null;
@@ -456,6 +459,10 @@ function renderProviders(providers, supportedProviders = []) {
                     <span class="provider-stat-label" data-i18n="providers.stat.errorCount">${t('providers.stat.errorCount')}</span>
                     <span class="provider-stat-value">${errorCount}</span>
                 </div>
+                ${providerType === 'gemini-antigravity' ? `<div class="provider-stat antigravity-quota-stat">
+                    <span class="provider-stat-label" data-i18n="providers.stat.antigravityQuotaUsed">${t('providers.stat.antigravityQuotaUsed')}</span>
+                    <span class="provider-stat-value antigravity-quota-value" data-quota-status="loading">${t('providers.antigravityQuota.loading')}</span>
+                </div>` : ''}
             </div>
         `;
 
@@ -471,6 +478,17 @@ function renderProviders(providers, supportedProviders = []) {
         });
 
         container.appendChild(providerDiv);
+
+        if (providerType === 'gemini-antigravity') {
+            loadAntigravityQuotaUsage(accounts).then(quota => {
+                const quotaValue = providerDiv.querySelector('.antigravity-quota-value');
+                if (!quotaValue) return;
+                quotaValue.textContent = quota.available
+                    ? `${Math.round(quota.usedPercent)}% / ${Math.round(quota.totalPercent)}%`
+                    : t('providers.antigravityQuota.unavailable');
+                quotaValue.dataset.quotaStatus = quota.available ? 'available' : 'unavailable';
+            });
+        }
         
         // 为添加分组按钮添加事件监听
         const addGroupBtn = providerDiv.querySelector('.add-group-btn');
