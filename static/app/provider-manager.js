@@ -11,6 +11,7 @@ import { updateUsageProviderConfigs } from './usage-manager.js';
 import { updateConfigProviderConfigs } from './config-manager.js';
 import { loadConfigList, updateProviderFilterOptions } from './upload-config-manager.js';
 import { setServiceMode } from './event-handlers.js';
+import { createCodexQuotaUsageLoader } from './codex-quota-badges.js';
 
 // 保存初始服务器时间和运行时间
 let initialServerTime = null;
@@ -19,6 +20,9 @@ let initialLoadTime = null;
 let isStaticProviderConfigsUpdated = false;
 let cachedSupportedProviders = null;
 let latestProvidersAccessInfo = null;
+const loadCodexQuotaUsage = createCodexQuotaUsageLoader({
+    apiClient: { get: url => window.apiClient.get(url) }
+});
 
 function navigateToSection(sectionId) {
     const navItem = document.querySelector(`.nav-item[data-section="${sectionId}"]`);
@@ -448,6 +452,12 @@ function renderProviders(providers, supportedProviders = []) {
                     <span class="provider-stat-label" data-i18n="providers.stat.healthyAccounts">${t('providers.stat.healthyAccounts')}</span>
                     <span class="provider-stat-value">${healthyCount}</span>
                 </div>
+                ${providerType === 'openai-codex-oauth' ? `
+                    <div class="provider-stat">
+                        <span class="provider-stat-label" data-i18n="providers.stat.codexQuotaUsed" title="${t('providers.codexQuota.summaryTitle')}">${t('providers.stat.codexQuotaUsed')}</span>
+                        <span class="provider-stat-value" data-codex-quota-summary>${t('providers.codexQuota.loading')}</span>
+                    </div>
+                ` : ''}
                 <div class="provider-stat">
                     <span class="provider-stat-label" data-i18n="providers.stat.usageCount">${t('providers.stat.usageCount')}</span>
                     <span class="provider-stat-value">${usageCount}</span>
@@ -471,6 +481,16 @@ function renderProviders(providers, supportedProviders = []) {
         });
 
         container.appendChild(providerDiv);
+
+        if (providerType === 'openai-codex-oauth') {
+            const quotaSummary = providerDiv.querySelector('[data-codex-quota-summary]');
+            loadCodexQuotaUsage(accounts).then(summary => {
+                if (!quotaSummary?.isConnected) return;
+                quotaSummary.textContent = summary.available
+                    ? `${summary.usedPercent}/${summary.totalPercent}%`
+                    : t('providers.codexQuota.unavailable');
+            });
+        }
         
         // 为添加分组按钮添加事件监听
         const addGroupBtn = providerDiv.querySelector('.add-group-btn');
