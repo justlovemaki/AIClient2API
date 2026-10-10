@@ -282,11 +282,20 @@ async function handleImageGenerationRequest(req, res, currentConfig, providerPoo
         let credentialMarkedUnhealthy = error.credentialMarkedUnhealthy === true;
 
         if (providerPoolManager && slotUuid) {
-            const rateLimitRecoveryTime = getRateLimitCooldownRecoveryTime(error, CONFIG);
+            const quotaRecoveryTime = error?.quotaRecoveryTime instanceof Date && !Number.isNaN(error.quotaRecoveryTime.getTime())
+                ? error.quotaRecoveryTime
+                : null;
+            const rateLimitRecoveryTime = quotaRecoveryTime || getRateLimitCooldownRecoveryTime(error, CONFIG);
             if (rateLimitRecoveryTime) {
-                logger.info(`[Provider Pool] Applying 429 cooldown for ${slotProviderType} (${slotUuid})`);
-                providerPoolManager.markProviderUnhealthyWithRecoveryTime(slotProviderType, {uuid: slotUuid}, '429 Too Many Requests - short cooldown', rateLimitRecoveryTime);
+                logger.info(`[Provider Pool] Applying 429 cooldown for ${slotProviderType} (${slotUuid}) until ${rateLimitRecoveryTime.toISOString()}`);
+                providerPoolManager.markProviderUnhealthyWithRecoveryTime(
+                    slotProviderType,
+                    {uuid: slotUuid},
+                    quotaRecoveryTime ? '429 RESOURCE_EXHAUSTED - quota recovery scheduled' : '429 Too Many Requests - short cooldown',
+                    rateLimitRecoveryTime
+                );
                 credentialMarkedUnhealthy = true;
+                if (quotaRecoveryTime) error.quotaExhaustedNoRetry = true;
             } else if (!credentialMarkedUnhealthy && !error.skipErrorCount) {
                 if (error.response?.status !== 400) {
                     logger.info(`[Provider Pool] Marking ${slotProviderType} as unhealthy due to image generation error (status: ${error.response?.status || 'unknown'})`);
@@ -300,7 +309,8 @@ async function handleImageGenerationRequest(req, res, currentConfig, providerPoo
             credentialMarkedUnhealthy = true;
         }
 
-        if (credentialMarkedUnhealthy && currentRetry < maxRetries && providerPoolManager && CONFIG) {
+        const imageQuotaHasAlternate = !error.quotaExhaustedNoRetry;
+        if (credentialMarkedUnhealthy && imageQuotaHasAlternate && currentRetry < maxRetries && providerPoolManager && CONFIG) {
             const randomDelay = Math.floor(Math.random() * 10000);
             logger.info(`[Image Generation Retry] Credential marked unhealthy. Waiting ${randomDelay}ms before retry ${currentRetry + 1}/${maxRetries}...`);
             await new Promise(resolve => setTimeout(resolve, randomDelay));

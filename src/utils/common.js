@@ -321,6 +321,64 @@ export function getRateLimitCooldownRecoveryTime(error, config = {}, now = Date.
     return new Date(now + cappedCooldownMs + jitter);
 }
 
+function formatQuotaRecovery(recoveryTime) {
+    if (!(recoveryTime instanceof Date) || Number.isNaN(recoveryTime.getTime())) return '';
+    return ` Quota is expected to recover at ${recoveryTime.toISOString()}.`;
+}
+
+/**
+ * 额度耗尽时不要空等后再选回同一个 uuid。
+ * 当前类型、已配置的 fallback、以及它们支持的模型都要看；没有替代才立刻返回。
+ */
+function hasAlternateHealthyCredential(providerPoolManager, providerType, currentUuid, requestedModel) {
+    const configuredFallbacks = providerPoolManager?.fallbackChain?.[providerType];
+    const providerTypes = [providerType, ...(Array.isArray(configuredFallbacks) ? configuredFallbacks : [])];
+    const seen = new Set();
+    return providerTypes.some(type => {
+        if (!type || seen.has(type)) return false;
+        seen.add(type);
+        const providers = providerPoolManager?.providerStatus?.[type];
+        if (!Array.isArray(providers)) return false;
+        return providers.some(provider => {
+            const config = provider?.config;
+            if (!config?.uuid || config.uuid === currentUuid || config.isHealthy === false || config.isDisabled === true) {
+                return false;
+            }
+            const supportedModels = config.supportedModels || config.models;
+            if (requestedModel && Array.isArray(supportedModels) && supportedModels.length > 0) {
+                return supportedModels.includes(requestedModel);
+            }
+            if (requestedModel && Array.isArray(config.notSupportedModels)) {
+                return !config.notSupportedModels.includes(requestedModel);
+            }
+            return true;
+        });
+    });
+}
+
+function applyCredentialCooldown(error, config, providerPoolManager, providerType, pooluuid, logPrefix) {
+    const quotaExhausted = error?.quotaExhausted === true;
+    const quotaRecoveryTime = error?.quotaRecoveryTime instanceof Date && !Number.isNaN(error.quotaRecoveryTime.getTime())
+        ? error.quotaRecoveryTime
+        : null;
+    const rateLimitRecoveryTime = quotaRecoveryTime || getRateLimitCooldownRecoveryTime(error, config);
+    if (!rateLimitRecoveryTime || !providerPoolManager || !pooluuid) {
+        return { recoveryTime: quotaRecoveryTime, credentialMarkedUnhealthy: false, quotaExhausted };
+    }
+
+    const reason = quotaRecoveryTime
+        ? '429 RESOURCE_EXHAUSTED - quota recovery scheduled'
+        : '429 Too Many Requests - short cooldown';
+    logger.info(`[Provider Pool] ${logPrefix} applying cooldown for ${providerType} (${pooluuid}) until ${rateLimitRecoveryTime.toISOString()}`);
+    providerPoolManager.markProviderUnhealthyWithRecoveryTime(providerType, {
+        uuid: pooluuid
+    }, reason, rateLimitRecoveryTime);
+    if (quotaRecoveryTime && !String(error.message || '').includes('Quota is expected to recover')) {
+        error.message = `${error.message || 'Quota exhausted.'}${formatQuotaRecovery(quotaRecoveryTime)}`;
+    }
+    return { recoveryTime: rateLimitRecoveryTime, credentialMarkedUnhealthy: true, quotaExhausted };
+}
+
 // ==================== API 常量 ====================
 
 export const API_ACTIONS = {
@@ -1225,14 +1283,8 @@ export async function handleStreamRequest(res, service, model, requestBody, from
         // 检查凭证是否已在底层被标记为不健康（避免重复标记）
         let credentialMarkedUnhealthy = error.credentialMarkedUnhealthy === true;
 
-        const rateLimitRecoveryTime = getRateLimitCooldownRecoveryTime(error, CONFIG);
-        if (rateLimitRecoveryTime && providerPoolManager && pooluuid) {
-            logger.info(`[Provider Pool] Applying 429 cooldown for ${toProvider} (${pooluuid}) until ${rateLimitRecoveryTime.toISOString()}`);
-            providerPoolManager.markProviderUnhealthyWithRecoveryTime(toProvider, {
-                uuid: pooluuid
-            }, '429 Too Many Requests - short cooldown', rateLimitRecoveryTime);
-            credentialMarkedUnhealthy = true;
-        }
+        const cooldown = applyCredentialCooldown(error, CONFIG, providerPoolManager, toProvider, pooluuid, '[Stream]');
+        if (cooldown.credentialMarkedUnhealthy) credentialMarkedUnhealthy = true;
         
         // 如果底层未标记，且不跳过错误计数，则在此处标记
         if (!credentialMarkedUnhealthy && !skipErrorCount && providerPoolManager && pooluuid) {
@@ -1253,20 +1305,29 @@ export async function handleStreamRequest(res, service, model, requestBody, from
         if (shouldSwitchCredential && !credentialMarkedUnhealthy) {
             credentialMarkedUnhealthy = true; // 触发下面的重试逻辑
         }
+
+        // 额度已经耗尽且池里没有第二个健康账号时，随机等待只会重新选中同一个 uuid。
+        const quotaHasAlternate = !cooldown.quotaExhausted || hasAlternateHealthyCredential(providerPoolManager, toProvider, pooluuid, model);
+        if (cooldown.quotaExhausted && !quotaHasAlternate) {
+            logger.info(`[Stream Retry] Quota exhausted for ${toProvider} (${pooluuid}) and no alternate credential exists. Returning immediately.`);
+        }
         
         // 凭证已被标记为不健康后，尝试切换到新凭证重试
         // 不再依赖状态码判断，只要凭证被标记不健康且可以重试，就尝试切换
-        if (credentialMarkedUnhealthy && currentRetry < maxRetries && providerPoolManager && CONFIG) {
-            // 增加10秒内的随机等待时间，避免所有请求同时切换凭证
-            const randomDelay = Math.floor(Math.random() * 10000); // 0-10000毫秒
+        if (credentialMarkedUnhealthy && quotaHasAlternate && currentRetry < maxRetries && providerPoolManager && CONFIG) {
+            // 额度耗尽已经知道要换号，不再随机空等。其它凭证切换仍保留 10 秒内抖动。
+            const randomDelay = cooldown.quotaExhausted ? 0 : Math.floor(Math.random() * 10000);
             logger.info(`[Stream Retry] Credential marked unhealthy. Waiting ${randomDelay}ms before retry ${currentRetry + 1}/${maxRetries} with different credential...`);
-            await new Promise(resolve => setTimeout(resolve, randomDelay));
+            if (randomDelay > 0) await new Promise(resolve => setTimeout(resolve, randomDelay));
             
             try {
                 // 动态导入以避免循环依赖
                 const { getApiServiceWithFallback } = await import('../services/service-manager.js');
                 // 使用 acquireSlot: true 以占用新凭证的并发插槽
-                const result = await getApiServiceWithFallback(CONFIG, model, { acquireSlot: true });
+                const result = await getApiServiceWithFallback(CONFIG, model, {
+                    acquireSlot: true,
+                    excludeUuids: cooldown.quotaExhausted && pooluuid ? [pooluuid] : []
+                });
                 
                 if (result && result.service) {
                     logger.info(`[Stream Retry] Switched to new credential: ${result.uuid} (provider: ${result.actualProviderType})`);
@@ -1489,14 +1550,8 @@ export async function handleUnaryRequest(res, service, model, requestBody, fromP
         // 检查凭证是否已在底层被标记为不健康（避免重复标记）
         let credentialMarkedUnhealthy = error.credentialMarkedUnhealthy === true;
 
-        const rateLimitRecoveryTime = getRateLimitCooldownRecoveryTime(error, CONFIG);
-        if (rateLimitRecoveryTime && providerPoolManager && pooluuid) {
-            logger.info(`[Provider Pool] Applying 429 cooldown for ${toProvider} (${pooluuid}) until ${rateLimitRecoveryTime.toISOString()}`);
-            providerPoolManager.markProviderUnhealthyWithRecoveryTime(toProvider, {
-                uuid: pooluuid
-            }, '429 Too Many Requests - short cooldown', rateLimitRecoveryTime);
-            credentialMarkedUnhealthy = true;
-        }
+        const cooldown = applyCredentialCooldown(error, CONFIG, providerPoolManager, toProvider, pooluuid, '[Unary]');
+        if (cooldown.credentialMarkedUnhealthy) credentialMarkedUnhealthy = true;
         
         // 如果底层未标记，且不跳过错误计数，则在此处标记
         if (!credentialMarkedUnhealthy && !skipErrorCount && providerPoolManager && pooluuid) {
@@ -1517,20 +1572,27 @@ export async function handleUnaryRequest(res, service, model, requestBody, fromP
         if (shouldSwitchCredential && !credentialMarkedUnhealthy) {
             credentialMarkedUnhealthy = true; // 触发下面的重试逻辑
         }
+
+        const quotaHasAlternate = !cooldown.quotaExhausted || hasAlternateHealthyCredential(providerPoolManager, toProvider, pooluuid, model);
+        if (cooldown.quotaExhausted && !quotaHasAlternate) {
+            logger.info(`[Unary Retry] Quota exhausted for ${toProvider} (${pooluuid}) and no alternate credential exists. Returning immediately.`);
+        }
         
         // 凭证已被标记为不健康后，尝试切换到新凭证重试
         // 不再依赖状态码判断，只要凭证被标记不健康且可以重试，就尝试切换
-        if (credentialMarkedUnhealthy && currentRetry < maxRetries && providerPoolManager && CONFIG) {
-            // 增加10秒内的随机等待时间，避免所有请求同时切换凭证
-            const randomDelay = Math.floor(Math.random() * 10000); // 0-10000毫秒
+        if (credentialMarkedUnhealthy && quotaHasAlternate && currentRetry < maxRetries && providerPoolManager && CONFIG) {
+            const randomDelay = cooldown.quotaExhausted ? 0 : Math.floor(Math.random() * 10000);
             logger.info(`[Unary Retry] Credential marked unhealthy. Waiting ${randomDelay}ms before retry ${currentRetry + 1}/${maxRetries} with different credential...`);
-            await new Promise(resolve => setTimeout(resolve, randomDelay));
+            if (randomDelay > 0) await new Promise(resolve => setTimeout(resolve, randomDelay));
             
             try {
                 // 动态导入以避免循环依赖
                 const { getApiServiceWithFallback } = await import('../services/service-manager.js');
                 // 使用 acquireSlot: true 以占用新凭证的并发插槽
-                const result = await getApiServiceWithFallback(CONFIG, model, { acquireSlot: true });
+                const result = await getApiServiceWithFallback(CONFIG, model, {
+                    acquireSlot: true,
+                    excludeUuids: cooldown.quotaExhausted && pooluuid ? [pooluuid] : []
+                });
                 
                 if (result && result.service) {
                     logger.info(`[Unary Retry] Switched to new credential: ${result.uuid} (provider: ${result.actualProviderType})`);

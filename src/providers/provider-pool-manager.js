@@ -1042,8 +1042,9 @@ export class ProviderPoolManager {
         // 提前计算池中最小序列号，避免在排序算法中重复 O(N) 计算
         const minSeq = Math.min(...availableProviders.map(p => p.config._lastSelectionSeq || 0));
 
+        const excludedUuids = new Set(Array.isArray(options.excludeUuids) ? options.excludeUuids : []);
         let availableAndHealthyProviders = availableProviders.filter(p =>
-            p.config.isHealthy && !p.config.isDisabled && !p.config.needsRefresh
+            p.config.isHealthy && !p.config.isDisabled && !p.config.needsRefresh && !excludedUuids.has(p.config.uuid)
         );
 
         // 如果指定了模型，则排除不支持该模型的提供商
@@ -1828,6 +1829,7 @@ export class ProviderPoolManager {
             provider.config.lastRefreshTime = Date.now(); // 标记为健康时也视为刚刷新完成
             provider.config.lastErrorTime = null;
             provider.config.lastErrorMessage = null;
+            provider.config.scheduledRecoveryTime = null;
             provider.config._lastSelectionSeq = 0;
             
             // 更新健康检测信息
@@ -1872,12 +1874,29 @@ export class ProviderPoolManager {
             provider.config.needsRefresh = false;
             provider.config.refreshCount = 0;
             provider.config.lastRefreshTime = Date.now(); // 显式重置时也更新刷新时间
-            // 更新为可用
             provider.config.lastHealthCheckTime = new Date().toISOString();
-            // 标记为健康，以便立即投入使用
-            this._log('info', `Reset refresh status and marked healthy for provider ${this._getDisplayName(provider.config)} (${providerType})`);
-
+            // 额度冷却未到期时，刷新只代表凭据还能用，不代表配额已经恢复。
+            // 提前标健康会让同一账号立刻被重新选中，继续空转。
+            const recoveryAt = provider.config.scheduledRecoveryTime ? new Date(provider.config.scheduledRecoveryTime) : null;
+            if (recoveryAt && !Number.isNaN(recoveryAt.getTime()) && recoveryAt.getTime() > Date.now()) {
+                this._log('info', `Reset refresh status for provider ${this._getDisplayName(provider.config)} (${providerType}); quota recovery still scheduled at ${recoveryAt.toISOString()}`);
+                this._debouncedSave(providerType);
+                return;
+            }
+            // 刷新成功意味着凭据已恢复可用。旧实现只写“marked healthy”日志却没改
+            // isHealthy，代理短断后的刷新成功节点会永久停留在不健康池、所有请求被入口拒绝。
+            // 不走 markProviderHealthy：那条路径会把 usageCount 加一，刷新并不是一次真实请求。
+            const wasHealthy = provider.config.isHealthy;
+            provider.config.isHealthy = true;
+            provider.config.errorCount = 0;
+            provider.config.lastErrorTime = null;
+            provider.config.lastErrorMessage = null;
+            provider.config.scheduledRecoveryTime = null;
+            if (!wasHealthy) {
+                this._logHealthStatusChange(providerType, provider.config, 'unhealthy', 'healthy', null);
+            }
             this._debouncedSave(providerType);
+            this._log('info', `Reset refresh status and marked healthy for provider ${this._getDisplayName(provider.config)} (${providerType})`);
         }
     }
 
