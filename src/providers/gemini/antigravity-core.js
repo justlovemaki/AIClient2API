@@ -2056,6 +2056,66 @@ export class AntigravityApiService {
         }
     }
 
+    async _requestQuotaEndpoint(endpoint) {
+        if (!this.isInitialized) await this.initialize();
+
+        for (const baseURL of this.baseURLs) {
+            try {
+                const requestOptions = {
+                    url: `${baseURL}/${ANTIGRAVITY_API_VERSION}:${endpoint}`,
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'User-Agent': this.userAgent
+                    },
+                    responseType: 'json',
+                    body: JSON.stringify({ project: this.projectId })
+                };
+
+                this._applySidecar(requestOptions);
+                const response = await this.authClient.request(requestOptions);
+                if (response.data) return response.data;
+            } catch (error) {
+                logger.warn(`[Antigravity] Failed to fetch ${endpoint} from ${baseURL}:`, error.message);
+            }
+        }
+
+        throw new Error(`Failed to fetch ${endpoint} from all endpoints`);
+    }
+
+    async getQuotaSummary() {
+        if (!this.isInitialized) await this.initialize();
+
+        const hasRemainingFraction = quota => {
+            const remaining = quota?.remaining || {};
+            const fraction = quota?.remainingFraction ?? quota?.remaining_fraction ??
+                remaining.remainingFraction ?? remaining.remaining_fraction;
+            return fraction !== null && fraction !== undefined && fraction !== '' &&
+                typeof fraction !== 'boolean' && Number.isFinite(Number(fraction));
+        };
+
+        try {
+            const summary = await this._requestQuotaEndpoint('retrieveUserQuotaSummary');
+            if ((summary.groups || []).some(group => group?.buckets?.some(hasRemainingFraction))) {
+                return { source: 'summary', groups: summary.groups };
+            }
+        } catch (error) {
+            logger.info(`[Antigravity] Quota summary unavailable, trying fallback: ${error.message}`);
+        }
+
+        try {
+            const quota = await this._requestQuotaEndpoint('retrieveUserQuota');
+            if ((quota.buckets || []).some(hasRemainingFraction)) {
+                return { source: 'quota', buckets: quota.buckets };
+            }
+        } catch (error) {
+            logger.info(`[Antigravity] Per-model quota unavailable, trying catalog fallback: ${error.message}`);
+        }
+
+        const catalog = await this.getUsageLimits();
+        return { source: 'models', models: catalog?.models || {} };
+    }
+
     /**
      * 获取模型配额信息 (返回原始 API 数据)
      * @returns {Promise<Object>} 原始配额信息

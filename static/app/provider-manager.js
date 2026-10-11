@@ -12,6 +12,7 @@ import { updateConfigProviderConfigs } from './config-manager.js';
 import { loadConfigList, updateProviderFilterOptions } from './upload-config-manager.js';
 import { setServiceMode } from './event-handlers.js';
 import { createCopilotQuotaUsageLoader } from './copilot-quota-summary.js';
+import { createAntigravityQuotaUsageLoader } from './antigravity-quota-summary.js';
 
 // 保存初始服务器时间和运行时间
 let initialServerTime = null;
@@ -21,6 +22,9 @@ let isStaticProviderConfigsUpdated = false;
 let cachedSupportedProviders = null;
 let latestProvidersAccessInfo = null;
 const loadCopilotQuotaUsage = createCopilotQuotaUsageLoader({ apiClient: window.apiClient });
+const loadAntigravityQuotaUsage = createAntigravityQuotaUsageLoader({
+    apiClient: window.apiClient
+});
 
 function navigateToSection(sectionId) {
     const navItem = document.querySelector(`.nav-item[data-section="${sectionId}"]`);
@@ -450,6 +454,22 @@ function renderProviders(providers, supportedProviders = []) {
                     <span class="provider-stat-label" data-i18n="providers.stat.healthyAccounts">${t('providers.stat.healthyAccounts')}</span>
                     <span class="provider-stat-value">${healthyCount}</span>
                 </div>
+                ${providerType === 'github-copilot' ? `
+                    <div class="provider-stat">
+                        <span class="provider-stat-label" data-i18n="providers.stat.copilotQuotaUsed" title="${t('providers.copilotQuota.summaryTitle')}">${t('providers.stat.copilotQuotaUsed')}</span>
+                        <span class="provider-stat-value" data-copilot-quota-summary>${t('providers.copilotQuota.loading')}</span>
+                    </div>
+                ` : ''}
+                ${providerType === 'gemini-antigravity' ? `
+                    <div class="provider-stat">
+                        <span class="provider-stat-label" data-i18n="providers.stat.antigravityGeminiQuota" title="${t('providers.antigravityQuota.summaryTitle')}">${t('providers.stat.antigravityGeminiQuota')}</span>
+                        <span class="provider-stat-value" data-antigravity-gemini-quota>${t('providers.antigravityQuota.loading')}</span>
+                    </div>
+                    <div class="provider-stat">
+                        <span class="provider-stat-label" data-i18n="providers.stat.antigravityClaudeQuota" title="${t('providers.antigravityQuota.summaryTitle')}">${t('providers.stat.antigravityClaudeQuota')}</span>
+                        <span class="provider-stat-value" data-antigravity-claude-quota>${t('providers.antigravityQuota.loading')}</span>
+                    </div>
+                ` : ''}
                 <div class="provider-stat">
                     <span class="provider-stat-label" data-i18n="providers.stat.usageCount">${t('providers.stat.usageCount')}</span>
                     <span class="provider-stat-value">${usageCount}</span>
@@ -458,11 +478,6 @@ function renderProviders(providers, supportedProviders = []) {
                     <span class="provider-stat-label" data-i18n="providers.stat.errorCount">${t('providers.stat.errorCount')}</span>
                     <span class="provider-stat-value">${errorCount}</span>
                 </div>
-                ${providerType === 'github-copilot' ? `
-                <div class="provider-stat copilot-quota-stat" title="${t('providers.copilotQuota.summaryTitle')}">
-                    <span class="provider-stat-label" data-i18n="providers.stat.copilotQuotaUsed">${t('providers.stat.copilotQuotaUsed')}</span>
-                    <span class="provider-stat-value copilot-quota-stat-value">${t('providers.copilotQuota.loading')}</span>
-                </div>` : ''}
             </div>
         `;
 
@@ -480,12 +495,25 @@ function renderProviders(providers, supportedProviders = []) {
         container.appendChild(providerDiv);
 
         if (providerType === 'github-copilot') {
-            const quotaValue = providerDiv.querySelector('.copilot-quota-stat-value');
+            const quotaValue = providerDiv.querySelector('[data-copilot-quota-summary]');
             loadCopilotQuotaUsage(accounts).then(result => {
-                if (!quotaValue) return;
+                if (!quotaValue?.isConnected) return;
                 quotaValue.textContent = result.available
                     ? `${Math.round(result.usedPercent)}% / ${Math.round(result.totalPercent)}%`
                     : t('providers.copilotQuota.unavailable');
+            });
+        }
+        if (providerType === 'gemini-antigravity') {
+            const geminiQuota = providerDiv.querySelector('[data-antigravity-gemini-quota]');
+            const claudeQuota = providerDiv.querySelector('[data-antigravity-claude-quota]');
+            loadAntigravityQuotaUsage(accounts).then(summary => {
+                if (!geminiQuota?.isConnected || !claudeQuota?.isConnected) return;
+                geminiQuota.textContent = summary.gemini.available
+                    ? `${summary.gemini.usedPercent}/${summary.gemini.totalPercent}%`
+                    : t('providers.antigravityQuota.unavailable');
+                claudeQuota.textContent = summary.claude.available
+                    ? `${summary.claude.usedPercent}/${summary.claude.totalPercent}%`
+                    : t('providers.antigravityQuota.unavailable');
             });
         }
         

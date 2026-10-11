@@ -302,11 +302,58 @@ export async function handleGetProviderType(req, res, currentConfig, providerPoo
     return true;
 }
 
+function normalizeAntigravityQuota(usage) {
+    const familyUsage = { gemini: [], claude: [] };
+    const getFamily = (...names) => {
+        const value = names.filter(Boolean).join(' ').toLowerCase();
+        if (/claude|anthropic|gpt/.test(value)) return 'claude';
+        if (value.includes('gemini')) return 'gemini';
+        return null;
+    };
+    const addBucket = (bucket, familyHint = null) => {
+        const remaining = bucket?.remaining || {};
+        const fractionValue = bucket?.remainingFraction ?? bucket?.remaining_fraction ??
+            remaining.remainingFraction ?? remaining.remaining_fraction;
+        const fraction = Number(fractionValue);
+        const family = familyHint || getFamily(
+            bucket?.group,
+            bucket?.modelId,
+            bucket?.model_id,
+            bucket?.bucketId,
+            bucket?.bucket_id,
+            bucket?.displayName,
+            bucket?.display_name
+        );
+        if (!family || fractionValue == null || typeof fractionValue === 'boolean' || !Number.isFinite(fraction)) return;
+
+        familyUsage[family].push(Math.round(Math.max(0, Math.min(100, (1 - fraction) * 100))));
+    };
+
+    if (usage?.source === 'summary') {
+        for (const group of usage.groups || []) {
+            const family = getFamily(group?.displayName, group?.display_name);
+            for (const bucket of group?.buckets || []) addBucket(bucket, family);
+        }
+    } else if (usage?.source === 'quota') {
+        for (const bucket of usage.buckets || []) addBucket(bucket);
+    } else {
+        for (const [modelId, model] of Object.entries(usage?.models || {})) {
+            const quotaInfo = model?.quotaInfo || model?.quota_info || {};
+            addBucket({ ...quotaInfo, modelId });
+        }
+    }
+
+    return Object.fromEntries(Object.entries(familyUsage).map(([family, percentages]) => [family, {
+        available: percentages.length > 0,
+        usedPercentage: percentages.length > 0 ? Math.max(...percentages) : null
+    }]));
+}
+
 /**
- * Read Copilot quota for one PAT-backed provider node.
+ * Read quota for one provider node with a supported account-level quota endpoint.
  */
 export async function handleGetProviderQuota(req, res, currentConfig, providerPoolManager, providerType, providerUuid) {
-    if (providerType !== 'github-copilot') {
+    if (providerType !== 'github-copilot' && providerType !== 'gemini-antigravity') {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: { message: 'Quota lookup is not supported for this provider.' } }));
         return true;
@@ -330,20 +377,26 @@ export async function handleGetProviderQuota(req, res, currentConfig, providerPo
         delete serviceConfig.providerPools;
 
         const serviceAdapter = getServiceAdapter(serviceConfig);
-        if (typeof serviceAdapter.getQuota !== 'function') {
+        const quotaMethod = providerType === 'github-copilot'
+            ? serviceAdapter.getQuota
+            : serviceAdapter.getQuotaSummary;
+        if (typeof quotaMethod !== 'function') {
             res.writeHead(501, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: { message: 'Quota lookup is not supported by this adapter.' } }));
             return true;
         }
 
-        const quota = await serviceAdapter.getQuota();
+        const quotaResponse = await quotaMethod.call(serviceAdapter);
+        const quota = providerType === 'github-copilot'
+            ? quotaResponse
+            : normalizeAntigravityQuota(quotaResponse);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ providerType, providerUuid, quota }));
         return true;
     } catch (error) {
-        logger.warn(`[UI API] Copilot quota lookup failed for provider ${providerUuid}: ${error.message}`);
+        logger.warn(`[UI API] Quota lookup failed for ${providerType} provider ${providerUuid}: ${error.message}`);
         res.writeHead(502, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: { message: 'Unable to retrieve GitHub Copilot quota.' } }));
+        res.end(JSON.stringify({ error: { message: 'Unable to retrieve provider quota.' } }));
         return true;
     }
 }

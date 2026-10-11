@@ -412,4 +412,38 @@ describe('Antigravity model availability', () => {
             jest.useRealTimers();
         }
     });
+
+    test('prefers grouped quota summaries over per-model quota data', async () => {
+        const service = Object.create(AntigravityApiService.prototype);
+        service.isInitialized = true;
+        service._requestQuotaEndpoint = jest.fn().mockResolvedValue({
+            groups: [{ displayName: 'Gemini Models', buckets: [{ remainingFraction: 0.5 }] }]
+        });
+        service.getUsageLimits = jest.fn();
+
+        await expect(service.getQuotaSummary()).resolves.toEqual({
+            source: 'summary',
+            groups: [{ displayName: 'Gemini Models', buckets: [{ remainingFraction: 0.5 }] }]
+        });
+        expect(service._requestQuotaEndpoint).toHaveBeenCalledTimes(1);
+        expect(service._requestQuotaEndpoint).toHaveBeenCalledWith('retrieveUserQuotaSummary');
+        expect(service.getUsageLimits).not.toHaveBeenCalled();
+    });
+
+    test('falls back to per-model quota buckets when the grouped summary is empty', async () => {
+        const service = Object.create(AntigravityApiService.prototype);
+        service.isInitialized = true;
+        service._requestQuotaEndpoint = jest.fn()
+            .mockResolvedValueOnce({ groups: [] })
+            .mockResolvedValueOnce({ buckets: [{ modelId: 'gemini-3-flash', remainingFraction: 0.4 }] });
+        service.getUsageLimits = jest.fn();
+
+        await expect(service.getQuotaSummary()).resolves.toEqual({
+            source: 'quota',
+            buckets: [{ modelId: 'gemini-3-flash', remainingFraction: 0.4 }]
+        });
+        expect(service._requestQuotaEndpoint).toHaveBeenNthCalledWith(1, 'retrieveUserQuotaSummary');
+        expect(service._requestQuotaEndpoint).toHaveBeenNthCalledWith(2, 'retrieveUserQuota');
+        expect(service.getUsageLimits).not.toHaveBeenCalled();
+    });
 });

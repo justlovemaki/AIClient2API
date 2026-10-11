@@ -237,6 +237,13 @@ export class AntigravityApiServiceAdapter extends ApiServiceAdapter {
         }
         return this.antigravityApiService.getUsageLimits();
     }
+
+    async getQuotaSummary() {
+        if (!this.antigravityApiService.isInitialized) {
+            await this.antigravityApiService.initialize();
+        }
+        return this.antigravityApiService.getQuotaSummary();
+    }
 }
 
 // OpenAI API 服务适配器
@@ -871,4 +878,3 @@ export function getServiceAdapter(config) {
     }
     return serviceInstances[providerKey];
 }
-
