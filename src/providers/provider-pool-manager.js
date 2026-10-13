@@ -13,6 +13,7 @@ import {
 } from './provider-models.js';
 import { broadcastEvent } from '../ui-modules/event-broadcast.js';
 import { ENDPOINT_TYPE } from '../utils/common.js';
+import { extractQuotaWindows, GreedyStickyScheduler } from './greedy-sticky-scheduler.js';
 
 function getCustomModelAliasesForProvider(config, providerType) {
     const customModels = Array.isArray(config?.customModels) ? config.customModels : [];
@@ -116,6 +117,11 @@ export class ProviderPoolManager {
         
         // 用于并发选点时的原子排序辅助（自增序列）
         this._selectionSequence = 0;
+        this.accountScheduler = this.globalConfig.ACCOUNT_SCHEDULER === 'greedy-sticky'
+            ? new GreedyStickyScheduler()
+            : null;
+        this._log('info', `[Scheduler] ACCOUNT_SCHEDULER=${this.globalConfig.ACCOUNT_SCHEDULER || 'lru'}`);
+        this.accountSchedulerHeld = new Set();
  
         this.initializeProviderStatus();
     }
@@ -901,6 +907,9 @@ export class ProviderPoolManager {
      * @param {object} options 
      */
     async acquireSlot(providerType, requestedModel = null, options = {}) {
+        if (this._usesGreedySticky(providerType)) {
+            return this._acquireGreedyStickySlot(providerType, requestedModel, options);
+        }
         // 使用 selectProvider 进行初次选择（评分逻辑已经包含了并发考虑）
         const selectedConfig = await this.selectProvider(providerType, requestedModel, { ...options, skipUsageCount: true });
         
@@ -974,6 +983,9 @@ export class ProviderPoolManager {
      */
     releaseSlot(providerType, uuid) {
         if (!providerType || !uuid) return;
+        if (this.accountSchedulerHeld.delete(`${providerType}:${uuid}`)) {
+            this.accountScheduler.release(uuid);
+        }
         
         const provider = this._findProvider(providerType, uuid);
         if (!provider) return;
@@ -1134,10 +1146,158 @@ export class ProviderPoolManager {
         return selected.config;
     }
 
+    _formatQuotaWindows(windows) {
+        const weekly = windows?.weekly;
+        const fiveHour = windows?.fiveHour;
+        const part = (label, window) => window
+            ? `${label} ${Math.round(window.remainingFraction * 100)}% until ${window.resetAt}`
+            : `${label} unavailable`;
+        return `${part('weekly', weekly)}; ${part('5h', fiveHour)}`;
+    }
+
+    _usesGreedySticky(providerType) {
+        return Boolean(this.accountScheduler) && this._getBaseProviderType(providerType) === MODEL_PROVIDER.ANTIGRAVITY;
+    }
+
+    _greedyAccountView(providerType, requestedModel, options = {}) {
+        const excluded = new Set(Array.isArray(options.excludeUuids) ? options.excludeUuids : []);
+        this._checkAndRecoverScheduledProviders(providerType);
+        return (this.providerStatus[providerType] || [])
+            .filter(provider => provider.config.isHealthy && !provider.config.isDisabled && !excluded.has(provider.config.uuid))
+            .filter(provider => this._supportsRequestedModel(providerType, provider, requestedModel))
+            .map(provider => ({
+                uuid: provider.config.uuid,
+                config: provider.config,
+                weekly: provider.config.quotaWindows?.weekly || null,
+                fiveHour: provider.config.quotaWindows?.fiveHour || null,
+                updatedAt: provider.config.quotaWindowsUpdatedAt || 0
+            }));
+    }
+
+    _supportsRequestedModel(providerType, provider, requestedModel) {
+        if (!requestedModel) return true;
+        const supportedModels = getConfiguredSupportedModels(providerType, provider.config);
+        if (supportedModels.length > 0) return supportedModels.includes(requestedModel);
+        return !Array.isArray(provider.config.notSupportedModels) || !provider.config.notSupportedModels.includes(requestedModel);
+    }
+
+    async _acquireGreedyStickySlot(providerType, requestedModel, options) {
+        this.accountScheduler.noteUserRequest();
+        const accounts = this._greedyAccountView(providerType, requestedModel, options);
+        const decision = await this.accountScheduler.acquire({
+            uuid: options.stickyUuid,
+            sessionId: options.sessionId,
+            accounts
+        });
+        if (decision.status === 'quota-exhausted') {
+            const error = new Error(`Antigravity quota exhausted${decision.resetAt ? `; earliest reset ${decision.resetAt}` : ''}`);
+            error.status = 429;
+            error.code = 429;
+            error.quotaExhausted = true;
+            throw error;
+        }
+        if (decision.status !== 'acquired') {
+            const error = new Error('Antigravity account is busy');
+            error.status = 429;
+            error.code = 429;
+            throw error;
+        }
+        const selected = accounts.find(account => account.uuid === decision.uuid);
+        if (!selected) return null;
+        this.accountSchedulerHeld.add(`${providerType}:${decision.uuid}`);
+        selected.config.lastUsed = new Date().toISOString();
+        this._debouncedSave(providerType);
+        this._log('info', `[Greedy Sticky] Selected ${this._getDisplayName(selected.config)} for ${options.sessionId || 'unscoped request'}`);
+        return selected.config;
+    }
+
+    refreshQuotaOnStartup() {
+        if (!this.accountScheduler) return;
+        for (const providerType of Object.keys(this.providerStatus)) {
+            if (this._usesGreedySticky(providerType)) {
+                this._scheduleQuotaRefresh(providerType, { startup: true, reason: 'startup' });
+            }
+        }
+        this._startQuotaRefreshLoop();
+    }
+
+    _startQuotaRefreshLoop() {
+        if (this._quotaRefreshLoop) return;
+        const tick = () => {
+            this._quotaRefreshLoop = setTimeout(() => {
+                this._quotaRefreshLoop = null;
+                this._refreshActiveQuota().catch(error => {
+                    this._log('warn', `[Quota Refresh] interval failed: ${error.message}`);
+                }).finally(tick);
+            }, 60 * 1000);
+            this._quotaRefreshLoop.unref?.();
+        };
+        tick();
+    }
+
+    async _refreshActiveQuota() {
+        for (const providerType of Object.keys(this.providerStatus)) {
+            if (this._usesGreedySticky(providerType)) {
+                await this._refreshDueQuota(providerType, { reason: 'interval' });
+            }
+        }
+    }
+
+    _scheduleQuotaRefresh(providerType, { startup = false, reason = 'interval' } = {}) {
+        if (this._quotaRefreshTimer) return;
+        this._quotaRefreshTimer = setTimeout(() => {
+            this._quotaRefreshTimer = null;
+            this._refreshDueQuota(providerType, { startup, reason }).catch(error => {
+                this._log('warn', `[Quota Refresh] ${reason} failed: ${error.message}`);
+            });
+        }, 0);
+        this._quotaRefreshTimer.unref?.();
+    }
+
+    async _refreshDueQuota(providerType, { startup = false, reason = 'interval' } = {}) {
+        this._log('info', `[Quota Refresh] ${reason} scan for ${providerType}`);
+        const providers = this.providerStatus[providerType] || [];
+        for (let index = 0; index < providers.length; index += 1) {
+            const provider = providers[index];
+            if (index > 0) {
+                const delay = this.globalConfig.QUOTA_REFRESH_STAGGER_MS ?? (1000 + Math.floor(Math.random() * 4000));
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+            const uuid = provider.config.uuid;
+            const displayName = this._getDisplayName(provider.config);
+            if (!uuid || !this.accountScheduler.shouldRefresh(uuid, { startup }) || this.refreshingUuids.has(uuid)) continue;
+            this.accountScheduler.markRefreshed(uuid);
+            try {
+                const tempConfig = { ...this.globalConfig, ...provider.config, MODEL_PROVIDER: providerType };
+                delete tempConfig.providerPools;
+                const service = getServiceAdapter(tempConfig);
+                const usage = typeof service.antigravityApiService?.getQuotaSummary === 'function'
+                    ? await service.antigravityApiService.getQuotaSummary()
+                    : null;
+                const windows = extractQuotaWindows(usage);
+                if (!windows.weekly || !windows.fiveHour) {
+                    this.accountScheduler.lastRefreshAt.delete(uuid);
+                    this._log('warn', `[Quota Refresh] ${reason} ${displayName}: incomplete quota, keeping the last known result`);
+                    continue;
+                }
+                provider.config.quotaWindows = windows;
+                provider.config.quotaWindowsUpdatedAt = Date.now();
+                this.accountScheduler.updateAccount(uuid, { uuid, ...windows });
+                this._log('info', `[Quota Refresh] ${reason} ${displayName}: ${this._formatQuotaWindows(windows)}`);
+            } catch (error) {
+                this._log('warn', `[Quota Refresh] ${reason} failed for ${displayName}: ${error.message}`);
+            }
+        }
+    }
+
     /**
      * 获取一个可用的提供商插槽，支持 Fallback 机制
      */
     async acquireSlotWithFallback(providerType, requestedModel = null, options = {}) {
+        if (this._usesGreedySticky(providerType)) {
+            const selectedConfig = await this._acquireGreedyStickySlot(providerType, requestedModel, options);
+            return selectedConfig ? { config: selectedConfig, actualProviderType: providerType, isFallback: false } : null;
+        }
         if (!providerType || typeof providerType !== 'string') {
             this._log('error', `Invalid providerType: ${providerType}`);
             return null;
@@ -1264,6 +1424,10 @@ export class ProviderPoolManager {
      * @returns {Promise<object|null>} An object containing the selected provider's configuration and the actual provider type used, or null if no healthy provider is found.
      */
     async selectProviderWithFallback(providerType, requestedModel = null, options = {}) {
+        if (this._usesGreedySticky(providerType)) {
+            const selectedConfig = await this._acquireGreedyStickySlot(providerType, requestedModel, options);
+            return selectedConfig ? { config: selectedConfig, actualProviderType: providerType, isFallback: false } : null;
+        }
         // 参数校验
         if (!providerType || typeof providerType !== 'string') {
             this._log('error', `Invalid providerType: ${providerType}`);
@@ -1714,6 +1878,7 @@ export class ProviderPoolManager {
 
             if (this.maxErrorCount > 0 && provider.config.errorCount >= this.maxErrorCount) {
                 provider.config.isHealthy = false;
+                this.accountScheduler?.markUnhealthy(providerConfig.uuid);
                 
                 // 健康状态变化日志
                 if (wasHealthy) {
@@ -1744,6 +1909,7 @@ export class ProviderPoolManager {
         if (provider) {
             const wasHealthy = provider.config.isHealthy;
             provider.config.isHealthy = false;
+            this.accountScheduler?.markUnhealthy(providerConfig.uuid);
             provider.config.needsRefresh = false; // 报错时不健康，清除刷新标记，防止卡死
             provider.config.refreshCount = 0;
             provider.config.errorCount = this.maxErrorCount; // Set to max to indicate definitive failure
@@ -1782,6 +1948,7 @@ export class ProviderPoolManager {
         const provider = this._findProvider(providerType, providerConfig.uuid);
         if (provider) {
             provider.config.isHealthy = false;
+            this.accountScheduler?.markUnhealthy(providerConfig.uuid);
             provider.config.needsRefresh = false; // 报错时不健康，清除刷新标记，防止卡死
             provider.config.refreshCount = 0;
             provider.config.errorCount = this.maxErrorCount; // Set to max to indicate definitive failure
@@ -1822,6 +1989,7 @@ export class ProviderPoolManager {
         if (provider) {
             const wasHealthy = provider.config.isHealthy;
             provider.config.isHealthy = true;
+            this.accountScheduler?.markHealthy(providerConfig.uuid);
             provider.config.errorCount = 0;
             provider.config.refreshCount = 0;
             provider.config.needsRefresh = false;
@@ -1897,6 +2065,7 @@ export class ProviderPoolManager {
             provider.config.errorCount = 0;
             provider.config.usageCount = 0;
             provider.config.isHealthy = true;
+            this.accountScheduler?.markHealthy(providerConfig.uuid);
             provider.config.lastErrorTime = null;
             provider.config.lastErrorMessage = null;
             provider.config._lastSelectionSeq = 0;
@@ -1916,6 +2085,7 @@ export class ProviderPoolManager {
 
         pool.forEach(provider => {
             provider.config.isHealthy = true;
+            this.accountScheduler?.markHealthy(provider.config.uuid);
             provider.config.errorCount = 0;
             provider.config.lastErrorTime = null;
             provider.config.lastErrorMessage = null;

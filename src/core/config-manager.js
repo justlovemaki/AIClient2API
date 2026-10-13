@@ -156,7 +156,8 @@ export async function initializeConfig(args = process.argv.slice(2), configFileP
         TLS_SIDECAR_PORT: 9090,     // sidecar 监听端口
         TLS_SIDECAR_BINARY_PATH: null, // 自定义二进制路径（默认自动搜索）
         TLS_SIDECAR_PROXY_URL: null,    // TLS Sidecar 专用的上游代理地址
-        UI_ENABLED: true           // 是否启用前端管理界面
+        UI_ENABLED: true,          // 是否启用前端管理界面
+        ACCOUNT_SCHEDULER: 'lru'   // lru：现有轮询；greedy-sticky：仅 Antigravity 的可选黏住调度
     };
 
     let currentConfig = { ...defaultConfig };
@@ -248,6 +249,11 @@ export async function initializeConfig(args = process.argv.slice(2), configFileP
     }
 
     // 合并定时健康检查的 CLI 配置
+    const scheduler = typeof currentConfig.ACCOUNT_SCHEDULER === 'string'
+        ? currentConfig.ACCOUNT_SCHEDULER.trim().toLowerCase()
+        : 'lru';
+    currentConfig.ACCOUNT_SCHEDULER = scheduler === 'greedy-sticky' ? 'greedy-sticky' : 'lru';
+
     if (currentConfig.SCHEDULE_HEALTH_CHECK_ENABLED !== undefined) {
         currentConfig.SCHEDULED_HEALTH_CHECK.enabled = currentConfig.SCHEDULE_HEALTH_CHECK_ENABLED;
     }
