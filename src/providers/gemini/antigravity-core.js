@@ -31,7 +31,11 @@ const ANTIGRAVITY_BASE_URL_DAILY = 'https://daily-cloudcode-pa.googleapis.com';
 const ANTIGRAVITY_BASE_URL_PROD = 'https://cloudcode-pa.googleapis.com';
 
 const ANTIGRAVITY_API_VERSION = 'v1internal';
-const ANTIGRAVITY_FREE_PLAN_THIRD_PARTY_CUTOFF = Date.UTC(2026, 10, 3);
+const ANTIGRAVITY_FREE_TIER_MODELS = new Set([
+    'gemini-3.8-flash-high',
+    'gemini-3.8-flash-medium',
+    'gemini-3.8-flash-low'
+]);
 const OAUTH_CLIENT_ID = '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com';
 const OAUTH_CLIENT_SECRET = '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';
 const DEFAULT_USER_AGENT = 'antigravity/2.8.1 darwin/arm64';
@@ -211,9 +215,8 @@ function resolveAntigravityUpstreamModel(modelName) {
 }
 
 export function isAntigravityModelRetired(modelName, now = Date.now(), tierId) {
-    const upstreamModel = resolveAntigravityUpstreamModel(modelName);
-    return tierId === 'free-tier' && now >= ANTIGRAVITY_FREE_PLAN_THIRD_PARTY_CUTOFF &&
-        (upstreamModel.startsWith('claude-') || upstreamModel.startsWith('gpt-oss-'));
+    if (tierId !== 'free-tier') return false;
+    return !ANTIGRAVITY_FREE_TIER_MODELS.has(stripModelSuffix(modelName));
 }
 
 function expandAntigravityClientModels(upstreamModel) {
@@ -1981,9 +1984,9 @@ export class AntigravityApiService {
     buildAntigravityPayload(model, requestBody) {
         let selectedModel = normalizeAntigravityModelId(model);
         if (isAntigravityModelRetired(selectedModel, Date.now(), this.tierId)) {
-            const error = new Error(`[Antigravity] Free-plan access to non-Gemini model '${selectedModel}' ended on 2026-11-03.`);
-            error.status = 400;
-            error.response = { status: 400 };
+            const error = new Error(`[Antigravity] Model '${selectedModel}' is unavailable on the free tier. Available models: ${[...ANTIGRAVITY_FREE_TIER_MODELS].join(', ')}.`);
+            error.status = 404;
+            error.response = { status: 404 };
             error.skipErrorCount = true;
             throw error;
         }

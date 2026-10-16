@@ -121,6 +121,21 @@ function getManagedSupportedModels(providerType, providers = []) {
     );
 }
 
+async function getTierAwareAntigravityModels(providerPoolManager) {
+    const providerType = 'gemini-antigravity';
+    if (!providerPoolManager?.providerStatus?.[providerType]?.length ||
+        typeof providerPoolManager.getAllAvailableModels !== 'function') {
+        return null;
+    }
+
+    const availableModels = await providerPoolManager.getAllAvailableModels();
+    return normalizeModelIds(
+        availableModels
+            .filter(model => model.provider === providerType)
+            .map(model => model.model)
+    );
+}
+
 async function persistProviderStatusToFile(currentConfig, providerPoolManager) {
     const filePath = currentConfig.PROVIDER_POOLS_FILE_PATH || 'configs/provider_pools.json';
     const providerPools = {};
@@ -429,9 +444,19 @@ export async function handleGetProviderModels(req, res, currentConfig, providerP
     const poolTypes = Object.keys(providerPools);
     const allTypes = [...new Set([...registeredProviders, ...poolTypes])];
     const allModels = {};
+    let antigravityModels = null;
+    try {
+        antigravityModels = await getTierAwareAntigravityModels(providerPoolManager);
+    } catch (error) {
+        logger.warn('[UI API] Failed to load tier-aware Antigravity models:', error.message);
+        antigravityModels = [];
+    }
 
     allTypes.forEach(type => {
         let models = getProviderModels(type);
+        if (type === 'gemini-antigravity' && antigravityModels !== null) {
+            models = antigravityModels;
+        }
         if (usesManagedModelList(type)) {
             const managedModels = getManagedSupportedModels(type, providerPools[type] || []);
             if (managedModels.length > 0) {
@@ -453,7 +478,17 @@ export async function handleGetProviderModels(req, res, currentConfig, providerP
  */
 export async function handleGetProviderTypeModels(req, res, currentConfig, providerPoolManager, providerType) {
     let models = getProviderModels(providerType);
-    if (usesManagedModelList(providerType)) {
+    if (providerType === 'gemini-antigravity') {
+        try {
+            const antigravityModels = await getTierAwareAntigravityModels(providerPoolManager);
+            if (antigravityModels !== null) {
+                models = antigravityModels;
+            }
+        } catch (error) {
+            logger.warn('[UI API] Failed to load tier-aware Antigravity models:', error.message);
+            models = [];
+        }
+    } else if (usesManagedModelList(providerType)) {
         try {
             const providerPools = loadProviderPools(currentConfig, providerPoolManager);
             const managedModels = getManagedSupportedModels(providerType, providerPools[providerType] || []);

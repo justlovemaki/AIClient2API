@@ -13,6 +13,7 @@ import { AntigravityApiService, isAntigravityModelRetired } from '../src/provide
 import { PROVIDER_MODELS } from '../src/providers/provider-models.js';
 import { ProviderPoolManager } from '../src/providers/provider-pool-manager.js';
 import { getServiceAdapter } from '../src/providers/adapter.js';
+import { handleGetProviderModels, handleGetProviderTypeModels } from '../src/ui-modules/provider-api.js';
 import { ENDPOINT_TYPE, MODEL_PROVIDER, handleModelListRequest, handleStreamRequest, handleUnaryRequest } from '../src/utils/common.js';
 
 describe('Antigravity model availability', () => {
@@ -30,11 +31,14 @@ describe('Antigravity model availability', () => {
         ]));
     });
 
-    test('applies the retirement cutoff only to explicitly free-tier accounts', () => {
-        expect(isAntigravityModelRetired('gemini-claude-sonnet-4-6', cutoff - 1, 'free-tier')).toBe(false);
+    test('restricts free-tier accounts to Gemini 3.8 Flash high, medium, and low', () => {
+        expect(isAntigravityModelRetired('gemini-claude-sonnet-4-6', cutoff - 1, 'free-tier')).toBe(true);
         expect(isAntigravityModelRetired('gemini-claude-sonnet-4-6', cutoff, 'free-tier')).toBe(true);
         expect(isAntigravityModelRetired('gpt-oss-120b-medium', cutoff, 'free-tier')).toBe(true);
-        expect(isAntigravityModelRetired('gemini-3.8-flash-medium', cutoff, 'free-tier')).toBe(false);
+        expect(isAntigravityModelRetired('gemini-3.7-flash-high', cutoff, 'free-tier')).toBe(true);
+        for (const model of ['gemini-3.8-flash-high', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-low']) {
+            expect(isAntigravityModelRetired(model, cutoff, 'free-tier')).toBe(false);
+        }
         expect(isAntigravityModelRetired('gemini-claude-sonnet-4-6', cutoff - 1, 'Google AI Pro(free)')).toBe(false);
         expect(isAntigravityModelRetired('gemini-claude-sonnet-4-6', cutoff, 'Google AI Pro(free)')).toBe(false);
         expect(isAntigravityModelRetired('gemini-claude-sonnet-4-6', cutoff - 1, undefined)).toBe(false);
@@ -50,7 +54,10 @@ describe('Antigravity model availability', () => {
                 service.isInitialized = true;
                 service.tierId = tierId;
                 service.availableModels = [
+                    'gemini-3.8-flash-high',
                     'gemini-3.8-flash-medium',
+                    'gemini-3.8-flash-low',
+                    'gemini-3.7-flash-high',
                     'gemini-claude-sonnet-4-6',
                     'gpt-oss-120b-medium'
                 ];
@@ -60,18 +67,25 @@ describe('Antigravity model availability', () => {
             const freeService = createService('free-tier');
             const freeResponse = await freeService.listModels();
             expect(freeResponse.models.map(model => model.name)).toEqual([
-                'models/gemini-3.8-flash-medium'
+                'models/gemini-3.8-flash-high',
+                'models/gemini-3.8-flash-medium',
+                'models/gemini-3.8-flash-low'
             ]);
             expect(() => freeService.buildAntigravityPayload('gemini-claude-sonnet-4-6', {}))
-                .toThrow('Free-plan access to non-Gemini model');
+                .toThrow('unavailable on the free tier');
             expect(() => freeService.buildAntigravityPayload('gpt-oss-120b-medium', {}))
-                .toThrow('Free-plan access to non-Gemini model');
+                .toThrow('unavailable on the free tier');
+            expect(() => freeService.buildAntigravityPayload('gemini-3.7-flash-high', {}))
+                .toThrow('unavailable on the free tier');
 
             for (const tierId of ['Google AI Pro', undefined]) {
                 const service = createService(tierId);
                 const response = await service.listModels();
                 expect(response.models.map(model => model.name)).toEqual([
+                    'models/gemini-3.8-flash-high',
                     'models/gemini-3.8-flash-medium',
+                    'models/gemini-3.8-flash-low',
+                    'models/gemini-3.7-flash-high',
                     'models/gemini-claude-sonnet-4-6',
                     'models/gpt-oss-120b-medium'
                 ]);
@@ -84,7 +98,7 @@ describe('Antigravity model availability', () => {
     test.each([
         ['unary', handleUnaryRequest, 'generateContent'],
         ['streaming', handleStreamRequest, 'generateContentStream']
-    ])('reports a retired model as a non-retryable client error for %s requests', async (_label, handler, method) => {
+    ])('reports a free-tier unavailable model as a non-retryable 404 for %s requests', async (_label, handler, method) => {
         jest.useFakeTimers().setSystemTime(cutoff);
 
         const service = Object.create(AntigravityApiService.prototype);
@@ -100,8 +114,8 @@ describe('Antigravity model availability', () => {
         }
 
         expect(policyError).toMatchObject({
-            status: 400,
-            response: { status: 400 },
+            status: 404,
+            response: { status: 404 },
             skipErrorCount: true
         });
 
@@ -145,13 +159,13 @@ describe('Antigravity model availability', () => {
         expect(poolManager.markProviderUnhealthyWithRecoveryTime).not.toHaveBeenCalled();
         expect(poolManager.releaseSlot).toHaveBeenCalledWith('gemini-antigravity', 'healthy-account');
         if (method === 'generateContent') {
-            expect(response.statusCode).toBe(400);
+            expect(response.statusCode).toBe(404);
         } else {
             const streamPayload = response.write.mock.calls.flat().join('');
             expect(response.statusCode).toBe(200);
-            expect(streamPayload).toContain('"code":400');
-            expect(streamPayload).toContain('INVALID_ARGUMENT');
-            expect(streamPayload).toContain('ended on 2026-11-03');
+            expect(streamPayload).toContain('"code":404');
+            expect(streamPayload).toContain('NOT_FOUND');
+            expect(streamPayload).toContain('unavailable on the free tier');
         }
     });
 
@@ -168,7 +182,7 @@ describe('Antigravity model availability', () => {
                 serviceAdapter.listModels = jest.fn(async () => {
                     serviceAdapter.antigravityApiService.tierId = tierId;
                     const models = tierId === 'free-tier'
-                        ? ['gemini-3.8-flash-medium']
+                        ? ['gemini-3.8-flash-high', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-low']
                         : tierId
                             ? ['gemini-3.8-flash-medium', 'gemini-claude-sonnet-4-6']
                             : [];
@@ -205,6 +219,10 @@ describe('Antigravity model availability', () => {
         try {
             for (const endpointType of [ENDPOINT_TYPE.OPENAI_MODEL_LIST, ENDPOINT_TYPE.GEMINI_MODEL_LIST]) {
                 const freeOnlyModels = await listAutoModels(['free-tier'], endpointType);
+                expect(freeOnlyModels).toContain('gemini-antigravity:gemini-3.8-flash-high');
+                expect(freeOnlyModels).toContain('gemini-antigravity:gemini-3.8-flash-medium');
+                expect(freeOnlyModels).toContain('gemini-antigravity:gemini-3.8-flash-low');
+                expect(freeOnlyModels).not.toContain('gemini-antigravity:gemini-3.7-flash-high');
                 expect(freeOnlyModels).not.toContain('gemini-antigravity:gemini-claude-sonnet-4-6');
                 expect(freeOnlyModels).not.toContain('gemini-antigravity:gpt-oss-120b-medium');
 
@@ -221,7 +239,44 @@ describe('Antigravity model availability', () => {
         }
     });
 
-    test('selects an eligible account for third-party models at the cutoff and keeps Gemini on free tier', async () => {
+    test('uses tier-filtered Antigravity models in playground model APIs', async () => {
+        const models = [
+            'gemini-3.8-flash-high',
+            'gemini-3.8-flash-low',
+            'gemini-3.8-flash-medium'
+        ];
+        const providerPoolManager = {
+            providerPools: { [MODEL_PROVIDER.ANTIGRAVITY]: [{ uuid: 'free-account' }] },
+            providerStatus: { [MODEL_PROVIDER.ANTIGRAVITY]: [{ uuid: 'free-account' }] },
+            getAllAvailableModels: jest.fn(async () => models.map(model => ({
+                provider: MODEL_PROVIDER.ANTIGRAVITY,
+                model
+            })))
+        };
+        const createResponse = () => ({
+            writeHead: jest.fn(),
+            end: jest.fn(function (body) {
+                this.body = body;
+            })
+        });
+
+        const allModelsResponse = createResponse();
+        await handleGetProviderModels({}, allModelsResponse, {}, providerPoolManager);
+        expect(JSON.parse(allModelsResponse.body)[MODEL_PROVIDER.ANTIGRAVITY]).toEqual(models);
+
+        const typeModelsResponse = createResponse();
+        await handleGetProviderTypeModels(
+            {},
+            typeModelsResponse,
+            {},
+            providerPoolManager,
+            MODEL_PROVIDER.ANTIGRAVITY
+        );
+        expect(JSON.parse(typeModelsResponse.body).models).toEqual(models);
+        expect(providerPoolManager.getAllAvailableModels).toHaveBeenCalledTimes(2);
+    });
+
+    test('routes only Gemini 3.8 Flash variants to free-tier accounts', async () => {
         const createPool = () => {
             const createNode = (tierId, uuid, lastUsed) => {
                 const config = {
@@ -263,7 +318,7 @@ describe('Antigravity model availability', () => {
             await expect(beforeCutoff.poolManager.selectProvider(
                 MODEL_PROVIDER.ANTIGRAVITY,
                 'gemini-claude-sonnet-4-6'
-            )).resolves.toBe(beforeCutoff.freeNode.config);
+            )).resolves.toBe(beforeCutoff.paidNode.config);
 
             jest.setSystemTime(cutoff);
             const atCutoff = createPool();
@@ -273,10 +328,13 @@ describe('Antigravity model availability', () => {
                 MODEL_PROVIDER.ANTIGRAVITY,
                 'gemini-claude-sonnet-4-6'
             )).resolves.toBe(atCutoff.paidNode.config);
-            await expect(atCutoff.poolManager.selectProvider(
-                MODEL_PROVIDER.ANTIGRAVITY,
-                'gemini-3.8-flash-medium'
-            )).resolves.toBe(atCutoff.freeNode.config);
+            for (const model of ['gemini-3.8-flash-high', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-low']) {
+                const eligiblePool = createPool();
+                await expect(eligiblePool.poolManager.selectProvider(
+                    MODEL_PROVIDER.ANTIGRAVITY,
+                    model
+                )).resolves.toBe(eligiblePool.freeNode.config);
+            }
         } finally {
             jest.useRealTimers();
         }
