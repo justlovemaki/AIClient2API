@@ -13,6 +13,7 @@ import {
 } from './provider-models.js';
 import { broadcastEvent } from '../ui-modules/event-broadcast.js';
 import { ENDPOINT_TYPE } from '../utils/common.js';
+import { getAntigravitySessionAffinityManager } from './gemini/antigravity-sticky-scheduler.js';
 
 function getCustomModelAliasesForProvider(config, providerType) {
     const customModels = Array.isArray(config?.customModels) ? config.customModels : [];
@@ -1104,15 +1105,33 @@ export class ProviderPoolManager {
             return null;
         }
 
-        // 改进：使用统一的评分策略进行选择
-        // 传入当前时间戳 now 确保一致性
-        const selected = availableAndHealthyProviders.sort((a, b) => {
-            const scoreA = this._calculateNodeScore(a, now, minSeq);
-            const scoreB = this._calculateNodeScore(b, now, minSeq);
-            if (scoreA !== scoreB) return scoreA - scoreB;
-            // 如果分值相同，使用 UUID 排序确保确定性
-            return a.uuid < b.uuid ? -1 : 1;
-        })[0];
+        const sessionManager = providerType === MODEL_PROVIDER.ANTIGRAVITY
+            ? getAntigravitySessionAffinityManager()
+            : null;
+        const sessionId = options.sessionId;
+        const isRoundRobin = options.isRoundRobin === true || options.schedulerMode === 'round-robin';
+        let selected = null;
+
+        if (sessionManager && sessionId && !isRoundRobin) {
+            const boundUuid = sessionManager.getBinding(sessionId);
+            selected = availableAndHealthyProviders.find(provider => provider.config.uuid === boundUuid) || null;
+            if (boundUuid && !selected) {
+                sessionManager.unbindSession(sessionId, 'bound account unavailable');
+            }
+        }
+
+        if (!selected) {
+            selected = availableAndHealthyProviders.sort((a, b) => {
+                const scoreA = this._calculateNodeScore(a, now, minSeq);
+                const scoreB = this._calculateNodeScore(b, now, minSeq);
+                if (scoreA !== scoreB) return scoreA - scoreB;
+                return a.uuid < b.uuid ? -1 : 1;
+            })[0];
+
+            if (sessionManager && sessionId && !isRoundRobin) {
+                sessionManager.bindSession(sessionId, selected.config.uuid);
+            }
+        }
 
         // 始终更新 lastUsed（确保 LRU 策略生效，避免并发请求选到同一个 provider）
         // usageCount 只在请求成功后才增加（由 skipUsageCount 控制）

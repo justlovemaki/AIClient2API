@@ -1525,12 +1525,20 @@ export async function handleStreamRequest(res, service, model, requestBody, from
             if (randomDelay > 0) await new Promise(resolve => setTimeout(resolve, randomDelay));
             
             try {
+                const { getAntigravitySessionAffinityManager } = await import('../providers/gemini/antigravity-sticky-scheduler.js');
+                if (toProvider === MODEL_PROVIDER.ANTIGRAVITY && retryContext?.sessionId && !retryContext?.isRoundRobin) {
+                    getAntigravitySessionAffinityManager().unbindSession(retryContext.sessionId, 'credential retry');
+                }
+
                 // 动态导入以避免循环依赖
                 const { getApiServiceWithFallback } = await import('../services/service-manager.js');
                 // 使用 acquireSlot: true 以占用新凭证的并发插槽
                 const result = await getApiServiceWithFallback(CONFIG, model, {
                     acquireSlot: true,
-                    excludeUuids: exhaustedUuids
+                    excludeUuids: exhaustedUuids,
+                    sessionId: retryContext?.sessionId,
+                    isRoundRobin: retryContext?.isRoundRobin,
+                    schedulerMode: retryContext?.schedulerMode
                 });
                 
                 if (result && result.service) {
@@ -1812,12 +1820,20 @@ export async function handleUnaryRequest(res, service, model, requestBody, fromP
             if (randomDelay > 0) await new Promise(resolve => setTimeout(resolve, randomDelay));
             
             try {
+                const { getAntigravitySessionAffinityManager } = await import('../providers/gemini/antigravity-sticky-scheduler.js');
+                if (toProvider === MODEL_PROVIDER.ANTIGRAVITY && retryContext?.sessionId && !retryContext?.isRoundRobin) {
+                    getAntigravitySessionAffinityManager().unbindSession(retryContext.sessionId, 'credential retry');
+                }
+
                 // 动态导入以避免循环依赖
                 const { getApiServiceWithFallback } = await import('../services/service-manager.js');
                 // 使用 acquireSlot: true 以占用新凭证的并发插槽
                 const result = await getApiServiceWithFallback(CONFIG, model, {
                     acquireSlot: true,
-                    excludeUuids: exhaustedUuids
+                    excludeUuids: exhaustedUuids,
+                    sessionId: retryContext?.sessionId,
+                    isRoundRobin: retryContext?.isRoundRobin,
+                    schedulerMode: retryContext?.schedulerMode
                 });
                 
                 if (result && result.service) {
@@ -2075,6 +2091,10 @@ export async function handleContentGenerationRequest(req, res, service, endpoint
     logger.info(`[Content Generation] Model: ${model}, Stream: ${isStream}`);
 
     let actualCustomName = CONFIG.customName;
+    const { extractAntigravitySchedulerContext } = await import('../providers/gemini/antigravity-sticky-scheduler.js');
+    const schedulerContext = CONFIG.MODEL_PROVIDER === MODEL_PROVIDER.ANTIGRAVITY
+        ? extractAntigravitySchedulerContext(req, originalRequestBody)
+        : { sessionId: null, isRoundRobin: false, mode: 'sticky' };
 
     // 2.5. 根据模型选择服务适配器：
     // - service 缺失时（例如上游未预先注入）进行兜底选择
@@ -2083,7 +2103,12 @@ export async function handleContentGenerationRequest(req, res, service, endpoint
     const shouldSelectByPool = providerPoolManager && (CONFIG.MODEL_PROVIDER === MODEL_PROVIDER.AUTO || (CONFIG.providerPools && CONFIG.providerPools[CONFIG.MODEL_PROVIDER]));
     if (!service || shouldSelectByPool) {
         const { getApiServiceWithFallback } = await import('../services/service-manager.js');
-        const result = await getApiServiceWithFallback(CONFIG, model, { acquireSlot: shouldSelectByPool });
+        const result = await getApiServiceWithFallback(CONFIG, model, {
+            acquireSlot: shouldSelectByPool,
+            sessionId: schedulerContext.sessionId,
+            isRoundRobin: schedulerContext.isRoundRobin,
+            schedulerMode: schedulerContext.mode
+        });
 
         service = result.service;
         toProvider = result.actualProviderType;
@@ -2161,7 +2186,14 @@ export async function handleContentGenerationRequest(req, res, service, endpoint
     // - 凭证切换重试：凭证被标记不健康后切换到其他凭证
     // 当没有不同的健康凭证可用时，重试会自动停止
     const credentialSwitchMaxRetries = CONFIG.CREDENTIAL_SWITCH_MAX_RETRIES || 5;
-    const retryContext = { CONFIG, currentRetry: 0, maxRetries: credentialSwitchMaxRetries };
+    const retryContext = {
+        CONFIG,
+        currentRetry: 0,
+        maxRetries: credentialSwitchMaxRetries,
+        sessionId: schedulerContext.sessionId,
+        isRoundRobin: schedulerContext.isRoundRobin,
+        schedulerMode: schedulerContext.mode
+    };
     
     if (isStream) {
         await handleStreamRequest(res, service, model, processedRequestBody, fromProvider, toProvider, CONFIG.PROMPT_LOG_MODE, PROMPT_LOG_FILENAME, providerPoolManager, actualUuid, actualCustomName, retryContext);
