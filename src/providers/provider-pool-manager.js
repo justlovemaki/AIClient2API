@@ -13,6 +13,7 @@ import {
 } from './provider-models.js';
 import { broadcastEvent } from '../ui-modules/event-broadcast.js';
 import { ENDPOINT_TYPE } from '../utils/common.js';
+import { getSessionAffinityManager } from './session-affinity-manager.js';
 
 function getCustomModelAliasesForProvider(config, providerType) {
     const customModels = Array.isArray(config?.customModels) ? config.customModels : [];
@@ -115,6 +116,9 @@ export class ProviderPoolManager {
         this.bufferDelay = options.globalConfig?.REFRESH_BUFFER_DELAY ?? 5000; // 默认5秒缓冲延迟
         this.refreshTaskTimeoutMs = options.globalConfig?.REFRESH_TASK_TIMEOUT_MS ?? 60000; // 默认60秒刷新超时
         
+        // 会话亲和性管理器（支持 Sticky Session 保持缓存命中）
+        this.sessionAffinityManager = options.sessionAffinityManager || getSessionAffinityManager();
+
         // 用于并发选点时的原子排序辅助（自增序列）
         this._selectionSequence = 0;
  
@@ -1104,15 +1108,42 @@ export class ProviderPoolManager {
             return null;
         }
 
-        // 改进：使用统一的评分策略进行选择
-        // 传入当前时间戳 now 确保一致性
-        const selected = availableAndHealthyProviders.sort((a, b) => {
-            const scoreA = this._calculateNodeScore(a, now, minSeq);
-            const scoreB = this._calculateNodeScore(b, now, minSeq);
-            if (scoreA !== scoreB) return scoreA - scoreB;
-            // 如果分值相同，使用 UUID 排序确保确定性
-            return a.uuid < b.uuid ? -1 : 1;
-        })[0];
+        // --- Sticky Session 亲和性选择 ---
+        // 默认尝试保持在同一个账号上，除非请求明确指定了 round-robin
+        let selected = null;
+        const sessionId = options.sessionId;
+        const isRoundRobin = options.isRoundRobin === true || options.schedulerMode === 'round-robin';
+        const isStickySupported = this.sessionAffinityManager?.supportsProvider(providerType);
+
+        if (sessionId && !isRoundRobin && isStickySupported) {
+            const boundUuid = this.sessionAffinityManager.getBinding(providerType, sessionId);
+            if (boundUuid) {
+                const boundProvider = availableAndHealthyProviders.find(p => p.config.uuid === boundUuid);
+                if (boundProvider) {
+                    selected = boundProvider;
+                    this._log('info', `[Sticky Session] Reusing bound provider ${this._getDisplayName(selected.config)} for session '${sessionId}' (${providerType})`);
+                } else {
+                    this._log('info', `[Sticky Session] Bound provider ${boundUuid} not available/healthy for session '${sessionId}', reassigning`);
+                    this.sessionAffinityManager.unbindSession(providerType, sessionId, 'unhealthy_or_excluded');
+                }
+            }
+        }
+
+        // 如果未命中有效绑定，使用统一评分策略（LRU + 负载 + 状态）进行选择
+        if (!selected) {
+            selected = availableAndHealthyProviders.sort((a, b) => {
+                const scoreA = this._calculateNodeScore(a, now, minSeq);
+                const scoreB = this._calculateNodeScore(b, now, minSeq);
+                if (scoreA !== scoreB) return scoreA - scoreB;
+                // 如果分值相同，使用 UUID 排序确保确定性
+                return a.uuid < b.uuid ? -1 : 1;
+            })[0];
+
+            // 首次选择后建立会话绑定（若未指定 round-robin 且有 sessionId）
+            if (sessionId && !isRoundRobin && isStickySupported && selected?.config?.uuid) {
+                this.sessionAffinityManager.bindSession(providerType, sessionId, selected.config.uuid);
+            }
+        }
 
         // 始终更新 lastUsed（确保 LRU 策略生效，避免并发请求选到同一个 provider）
         // usageCount 只在请求成功后才增加（由 skipUsageCount 控制）
