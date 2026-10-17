@@ -10,6 +10,7 @@ import { CodexApiService } from './openai/codex-core.js';
 import { ForwardApiService } from './forward/forward-core.js';
 import { GrokApiService } from './grok/grok-core.js';
 import { GrokCliApiService } from './grok/grok-cli-core.js';
+import { GrokWebApiService } from './grok/grok-web-core.js';
 import { GitHubCopilotApiService } from './github/github-copilot-core.js';
 import { MODEL_PROVIDER } from '../utils/constants.js';
 import logger from '../utils/logger.js';
@@ -750,6 +751,54 @@ export class GrokCliApiServiceAdapter extends ApiServiceAdapter {
     }
 }
 
+// Grok Web API 服务适配器 (WebSocket-based for Grok Web)
+export class GrokWebApiServiceAdapter extends ApiServiceAdapter {
+    constructor(config) {
+        super();
+        this.grokWebApiService = new GrokWebApiService(config);
+    }
+
+    async generateContent(model, requestBody) {
+        if (!this.grokWebApiService.isInitialized) {
+            await this.grokWebApiService.initialize();
+        }
+        return this.grokWebApiService.generateContent(model, requestBody);
+    }
+
+    async *generateContentStream(model, requestBody) {
+        if (!this.grokWebApiService.isInitialized) {
+            await this.grokWebApiService.initialize();
+        }
+        yield* this.grokWebApiService.generateContentStream(model, requestBody);
+    }
+
+    async listModels() {
+        if (!this.grokWebApiService.isInitialized) {
+            await this.grokWebApiService.initialize();
+        }
+        return this.grokWebApiService.listModels();
+    }
+
+    async refreshToken() {
+        return this.grokWebApiService.refreshToken();
+    }
+
+    async forceRefreshToken() {
+        return this.grokWebApiService.refreshToken();
+    }
+
+    isExpiryDateNear() {
+        return this.grokWebApiService.isExpiryDateNear();
+    }
+
+    async getUsageLimits() {
+        if (!this.grokWebApiService.isInitialized) {
+            await this.grokWebApiService.initialize();
+        }
+        return this.grokWebApiService.getUsageLimits();
+    }
+}
+
 // GitHub Copilot API 服务适配器
 export class GitHubCopilotApiServiceAdapter extends ApiServiceAdapter {
     constructor(config) {
@@ -800,7 +849,7 @@ registerAdapter(MODEL_PROVIDER.ANTIGRAVITY, AntigravityApiServiceAdapter);
 registerAdapter(MODEL_PROVIDER.KIRO_API, KiroApiServiceAdapter);
 registerAdapter(MODEL_PROVIDER.CODEX_API, CodexApiServiceAdapter);
 registerAdapter(MODEL_PROVIDER.GROK_CLI, GrokCliApiServiceAdapter);
-registerAdapter(MODEL_PROVIDER.GROK_WEB, GrokApiServiceAdapter);
+registerAdapter(MODEL_PROVIDER.GROK_WEB, GrokWebApiServiceAdapter);
 registerAdapter(MODEL_PROVIDER.GITHUB_COPILOT, GitHubCopilotApiServiceAdapter);
 // registerAdapter(MODEL_PROVIDER.FORWARD_API, ForwardApiServiceAdapter);
 // registerAdapter(MODEL_PROVIDER.QWEN_API, QwenApiServiceAdapter);
