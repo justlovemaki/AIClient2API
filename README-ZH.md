@@ -603,8 +603,7 @@ curl http://localhost:3000/claude-kiro-oauth/v1/chat/completions \
      "PROXY_URL": "http://127.0.0.1:7890",
       "PROXY_ENABLED_PROVIDERS": [
         "gemini-antigravity",
-        "claude-kiro-oauth",
-        "grok-web"
+        "claude-kiro-oauth"
       ]
     }
     ```
