@@ -19,6 +19,7 @@ jest.mock('../src/providers/gemini/antigravity-core.js', () => ({
 
 import {
     extractAntigravitySchedulerContext,
+    AntigravitySessionAffinityManager,
     getAntigravitySessionAffinityManager,
     resetAntigravitySessionAffinityManager
 } from '../src/providers/gemini/antigravity-sticky-scheduler.js';
@@ -111,6 +112,46 @@ describe('Antigravity sticky session scheduler', () => {
         });
 
         expect(first.uuid).toBe(second.uuid);
+    });
+
+    test('uses quota for initial placement but never rebalances a warm session', async () => {
+        const pool = createPoolManager([
+            { uuid: 'agy-low' },
+            { uuid: 'agy-high' }
+        ]);
+        const manager = getAntigravitySessionAffinityManager();
+        const now = Date.now();
+        manager.updateQuota('agy-low', {
+            models: { low: { quotaInfo: { remainingFraction: 0.1, resetTime: new Date(now + 60 * 60 * 1000).toISOString() } } }
+        });
+        manager.updateQuota('agy-high', {
+            models: { high: { quotaInfo: { remainingFraction: 0.9, resetTime: new Date(now + 60 * 60 * 1000).toISOString() } } }
+        });
+
+        const first = await pool.selectProvider(MODEL_PROVIDER.ANTIGRAVITY, 'gemini-3.8-flash-low', {
+            sessionId: 'quota-session'
+        });
+        expect(first.uuid).toBe('agy-high');
+
+        manager.updateQuota('agy-low', {
+            models: { low: { quotaInfo: { remainingFraction: 1, resetTime: new Date(now + 60 * 60 * 1000).toISOString() } } }
+        });
+        const second = await pool.selectProvider(MODEL_PROVIDER.ANTIGRAVITY, 'gemini-3.8-flash-low', {
+            sessionId: 'quota-session'
+        });
+        expect(second.uuid).toBe(first.uuid);
+    });
+
+    test('refreshes quota asynchronously and caches the result', async () => {
+        const manager = new AntigravitySessionAffinityManager({ quotaRefreshIntervalMs: 60 * 60 * 1000 });
+        const usage = { models: { flash: { quotaInfo: { remainingFraction: 0.75 } } } };
+        const fetchQuota = jest.fn(async () => usage);
+
+        expect(await manager.refreshQuota('agy-refresh', fetchQuota)).toBe(true);
+        expect(fetchQuota).toHaveBeenCalledTimes(1);
+        expect(manager.getQuotaScore('agy-refresh')).toBeGreaterThan(0);
+        expect(await manager.refreshQuota('agy-refresh', fetchQuota)).toBe(false);
+        expect(fetchQuota).toHaveBeenCalledTimes(1);
     });
 
     test('rotates accounts when round-robin is explicitly requested', async () => {

@@ -1125,6 +1125,22 @@ export class ProviderPoolManager {
         const isRoundRobin = options.isRoundRobin === true || options.schedulerMode === 'round-robin';
         let selected = null;
 
+        if (sessionManager) {
+            sessionManager.noteRequest();
+            for (const provider of availableAndHealthyProviders) {
+                const providerConfig = {
+                    ...this.globalConfig,
+                    ...provider.config,
+                    MODEL_PROVIDER: MODEL_PROVIDER.ANTIGRAVITY,
+                    uuid: provider.config.uuid
+                };
+                const serviceAdapter = getServiceAdapter(providerConfig);
+                if (typeof serviceAdapter?.getUsageLimits === 'function') {
+                    void sessionManager.refreshQuota(provider.config.uuid, () => serviceAdapter.getUsageLimits());
+                }
+            }
+        }
+
         if (sessionManager && sessionId && !isRoundRobin) {
             const boundUuid = sessionManager.getBinding(sessionId);
             selected = availableAndHealthyProviders.find(provider => provider.config.uuid === boundUuid) || null;
@@ -1134,7 +1150,16 @@ export class ProviderPoolManager {
         }
 
         if (!selected) {
-            selected = availableAndHealthyProviders.sort((a, b) => {
+            selected = [...availableAndHealthyProviders].sort((a, b) => {
+                if (sessionManager && sessionId && !isRoundRobin) {
+                    const quotaA = sessionManager.getQuotaScore(a.config.uuid, now);
+                    const quotaB = sessionManager.getQuotaScore(b.config.uuid, now);
+                    if (quotaA !== null && quotaB === null) return -1;
+                    if (quotaA === null && quotaB !== null) return 1;
+                    if (quotaA !== null && quotaB !== null && quotaA !== quotaB) {
+                        return quotaB - quotaA;
+                    }
+                }
                 const scoreA = this._calculateNodeScore(a, now, minSeq);
                 const scoreB = this._calculateNodeScore(b, now, minSeq);
                 if (scoreA !== scoreB) return scoreA - scoreB;
