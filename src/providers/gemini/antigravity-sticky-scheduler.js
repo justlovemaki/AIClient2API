@@ -6,25 +6,56 @@ const DEFAULT_QUOTA_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 const DEFAULT_QUOTA_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 const DEFAULT_QUOTA_RESET_FLOOR_SECONDS = 600;
 
+function quotaFamilyForModel(model) {
+    const normalized = String(model || '').toLowerCase();
+    return normalized.startsWith('claude-') || normalized.startsWith('gpt-oss-') || normalized.startsWith('gemini-claude-')
+        ? '3p'
+        : 'gemini';
+}
+
+function quotaFamilyForBucket(value, key) {
+    const names = [value?.bucketId, value?.modelId, value?.name, key];
+    for (const name of names) {
+        const normalized = String(name || '').toLowerCase();
+        if (normalized.startsWith('3p-')) return '3p';
+        if (normalized.startsWith('gemini-')) return 'gemini';
+    }
+    return null;
+}
+
 function readQuotaWindows(usage) {
     const buckets = [];
-    const visit = value => {
+    const visit = (value, key) => {
         if (!value || typeof value !== 'object') return;
         const remaining = value.remainingFraction ?? value.remaining_fraction ?? value.remaining;
         const resetAt = value.resetAt ?? value.reset_at ?? value.resetTime;
         if (typeof remaining === 'number' && Number.isFinite(remaining) && remaining >= 0 && remaining <= 1) {
-            buckets.push({ remaining, resetAt });
+            const family = quotaFamilyForBucket(value, key);
+            if (family) buckets.push({ family, remaining, resetAt });
         }
-        for (const child of Object.values(value)) {
-            if (child && typeof child === 'object') visit(child);
+        for (const [childKey, child] of Object.entries(value)) {
+            if (child && typeof child === 'object') visit(child, childKey);
         }
     };
     visit(usage);
     return buckets;
 }
 
-function quotaScore(snapshot, now = Date.now()) {
-    const usable = snapshot?.windows?.filter(window => window.remaining > 0) || [];
+function quotaWindowState(window, now = Date.now()) {
+    if (!window || typeof window.remaining !== 'number') return 'unknown';
+    if (window.remaining > 0) return 'available';
+    const resetAt = Date.parse(window.resetAt || '');
+    return Number.isFinite(resetAt) && resetAt > now ? 'exhausted' : 'reset-due';
+}
+
+function familyWindows(snapshot, family) {
+    return snapshot?.windows?.filter(window => window.family === family) || [];
+}
+
+function quotaScore(snapshot, family, now = Date.now()) {
+    const windows = familyWindows(snapshot, family);
+    if (windows.some(window => quotaWindowState(window, now) === 'exhausted')) return null;
+    const usable = windows.filter(window => window.remaining > 0);
     if (usable.length === 0) return null;
     return Math.max(...usable.map(window => {
         const resetAt = Date.parse(window.resetAt || '');
@@ -137,10 +168,16 @@ export class AntigravitySessionAffinityManager {
         });
     }
 
-    getQuotaScore(uuid, now = Date.now()) {
+    getQuotaScore(uuid, model, now = Date.now()) {
         const snapshot = this.quotaSnapshots.get(uuid);
         if (!snapshot) return null;
-        return quotaScore(snapshot, now);
+        return quotaScore(snapshot, quotaFamilyForModel(model), now);
+    }
+
+    isQuotaExhausted(uuid, model, now = Date.now()) {
+        const snapshot = this.quotaSnapshots.get(uuid);
+        const family = quotaFamilyForModel(model);
+        return familyWindows(snapshot, family).some(window => quotaWindowState(window, now) === 'exhausted');
     }
 
     shouldRefresh(uuid, now = Date.now()) {
@@ -171,10 +208,12 @@ export class AntigravitySessionAffinityManager {
         }
     }
 
-    rankInitialProviders(providers, now = Date.now()) {
-        return [...providers].sort((left, right) => {
-            const leftScore = this.getQuotaScore(left.config.uuid, now);
-            const rightScore = this.getQuotaScore(right.config.uuid, now);
+    rankInitialProviders(providers, model, now = Date.now()) {
+        return providers
+            .filter(provider => !this.isQuotaExhausted(provider.config.uuid, model, now))
+            .sort((left, right) => {
+            const leftScore = this.getQuotaScore(left.config.uuid, model, now);
+            const rightScore = this.getQuotaScore(right.config.uuid, model, now);
             if (leftScore !== null && rightScore === null) return -1;
             if (leftScore === null && rightScore !== null) return 1;
             if (leftScore !== null && rightScore !== null && leftScore !== rightScore) {

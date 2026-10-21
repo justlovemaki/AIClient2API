@@ -32,7 +32,6 @@ function getCustomModelAliasesForProvider(config, providerType) {
             .map(model => model.alias)
     );
 }
-
 function getCustomModelIdsForProvider(config, providerType) {
     const customModels = Array.isArray(config?.customModels) ? config.customModels : [];
     return customModels
@@ -1143,23 +1142,24 @@ export class ProviderPoolManager {
 
         if (sessionManager && sessionId && !isRoundRobin) {
             const boundUuid = sessionManager.getBinding(sessionId);
-            selected = availableAndHealthyProviders.find(provider => provider.config.uuid === boundUuid) || null;
+            selected = availableAndHealthyProviders.find(provider => (
+                provider.config.uuid === boundUuid &&
+                !sessionManager.isQuotaExhausted(provider.config.uuid, requestedModel, now)
+            )) || null;
             if (boundUuid && !selected) {
-                sessionManager.unbindSession(sessionId, 'bound account unavailable');
+                sessionManager.unbindSession(sessionId, 'bound account unavailable or quota exhausted');
             }
         }
 
         if (!selected) {
-            selected = [...availableAndHealthyProviders].sort((a, b) => {
-                if (sessionManager && sessionId && !isRoundRobin) {
-                    const quotaA = sessionManager.getQuotaScore(a.config.uuid, now);
-                    const quotaB = sessionManager.getQuotaScore(b.config.uuid, now);
-                    if (quotaA !== null && quotaB === null) return -1;
-                    if (quotaA === null && quotaB !== null) return 1;
-                    if (quotaA !== null && quotaB !== null && quotaA !== quotaB) {
-                        return quotaB - quotaA;
-                    }
-                }
+            const rankedProviders = sessionManager && !isRoundRobin
+                ? sessionManager.rankInitialProviders(availableAndHealthyProviders, requestedModel, now)
+                : availableAndHealthyProviders;
+            if (rankedProviders.length === 0) {
+                this._log('warn', `No Antigravity providers have quota available for model: ${requestedModel}`);
+                return null;
+            }
+            selected = [...rankedProviders].sort((a, b) => {
                 const scoreA = this._calculateNodeScore(a, now, minSeq);
                 const scoreB = this._calculateNodeScore(b, now, minSeq);
                 if (scoreA !== scoreB) return scoreA - scoreB;

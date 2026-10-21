@@ -122,10 +122,10 @@ describe('Antigravity sticky session scheduler', () => {
         const manager = getAntigravitySessionAffinityManager();
         const now = Date.now();
         manager.updateQuota('agy-low', {
-            models: { low: { quotaInfo: { remainingFraction: 0.1, resetTime: new Date(now + 60 * 60 * 1000).toISOString() } } }
+            groups: { low: { bucketId: 'gemini-weekly', remainingFraction: 0.1, resetTime: new Date(now + 60 * 60 * 1000).toISOString() } }
         });
         manager.updateQuota('agy-high', {
-            models: { high: { quotaInfo: { remainingFraction: 0.9, resetTime: new Date(now + 60 * 60 * 1000).toISOString() } } }
+            groups: { high: { bucketId: 'gemini-weekly', remainingFraction: 0.9, resetTime: new Date(now + 60 * 60 * 1000).toISOString() } }
         });
 
         const first = await pool.selectProvider(MODEL_PROVIDER.ANTIGRAVITY, 'gemini-3.8-flash-low', {
@@ -134,7 +134,7 @@ describe('Antigravity sticky session scheduler', () => {
         expect(first.uuid).toBe('agy-high');
 
         manager.updateQuota('agy-low', {
-            models: { low: { quotaInfo: { remainingFraction: 1, resetTime: new Date(now + 60 * 60 * 1000).toISOString() } } }
+            groups: { low: { bucketId: 'gemini-weekly', remainingFraction: 1, resetTime: new Date(now + 60 * 60 * 1000).toISOString() } }
         });
         const second = await pool.selectProvider(MODEL_PROVIDER.ANTIGRAVITY, 'gemini-3.8-flash-low', {
             sessionId: 'quota-session'
@@ -144,14 +144,64 @@ describe('Antigravity sticky session scheduler', () => {
 
     test('refreshes quota asynchronously and caches the result', async () => {
         const manager = new AntigravitySessionAffinityManager({ quotaRefreshIntervalMs: 60 * 60 * 1000 });
-        const usage = { models: { flash: { quotaInfo: { remainingFraction: 0.75 } } } };
+        const usage = { groups: { flash: { bucketId: 'gemini-weekly', remainingFraction: 0.75 } } };
         const fetchQuota = jest.fn(async () => usage);
 
         expect(await manager.refreshQuota('agy-refresh', fetchQuota)).toBe(true);
         expect(fetchQuota).toHaveBeenCalledTimes(1);
-        expect(manager.getQuotaScore('agy-refresh')).toBeGreaterThan(0);
+        expect(manager.getQuotaScore('agy-refresh', 'gemini-3.8-flash-low')).toBeGreaterThan(0);
         expect(await manager.refreshQuota('agy-refresh', fetchQuota)).toBe(false);
         expect(fetchQuota).toHaveBeenCalledTimes(1);
+    });
+
+    test('scores Gemini and 3p quota books independently for initial placement', async () => {
+        const pool = createPoolManager([
+            { uuid: 'gemini-ready' },
+            { uuid: '3p-ready' }
+        ]);
+        const manager = getAntigravitySessionAffinityManager();
+        const resetTime = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+        manager.updateQuota('gemini-ready', {
+            groups: [
+                { bucketId: 'gemini-weekly', remainingFraction: 0.9, resetTime },
+                { bucketId: '3p-weekly', remainingFraction: 0, resetTime }
+            ]
+        });
+        manager.updateQuota('3p-ready', {
+            groups: [
+                { bucketId: 'gemini-weekly', remainingFraction: 0, resetTime },
+                { bucketId: '3p-weekly', remainingFraction: 0.9, resetTime }
+            ]
+        });
+
+        await expect(pool.selectProvider(MODEL_PROVIDER.ANTIGRAVITY, 'gemini-3.8-flash-low'))
+            .resolves.toMatchObject({ uuid: 'gemini-ready' });
+        await expect(pool.selectProvider(MODEL_PROVIDER.ANTIGRAVITY, 'gemini-claude-sonnet-4-6'))
+            .resolves.toMatchObject({ uuid: '3p-ready' });
+    });
+
+    test('excludes an account when any bucket in the requested family is exhausted', async () => {
+        const pool = createPoolManager([
+            { uuid: 'five-hour-exhausted' },
+            { uuid: 'available' }
+        ]);
+        const manager = getAntigravitySessionAffinityManager();
+        const resetTime = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+        manager.updateQuota('five-hour-exhausted', {
+            groups: [
+                { bucketId: 'gemini-weekly', remainingFraction: 0.8, resetTime },
+                { bucketId: 'gemini-5h', remainingFraction: 0, resetTime }
+            ]
+        });
+        manager.updateQuota('available', {
+            groups: [
+                { bucketId: 'gemini-weekly', remainingFraction: 0.1, resetTime },
+                { bucketId: 'gemini-5h', remainingFraction: 0.1, resetTime }
+            ]
+        });
+
+        await expect(pool.selectProvider(MODEL_PROVIDER.ANTIGRAVITY, 'gemini-3.8-flash-low'))
+            .resolves.toMatchObject({ uuid: 'available' });
     });
 
     test('rotates accounts when round-robin is explicitly requested', async () => {
