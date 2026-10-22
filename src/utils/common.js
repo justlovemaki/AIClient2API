@@ -1532,12 +1532,22 @@ export async function handleStreamRequest(res, service, model, requestBody, from
             if (randomDelay > 0) await new Promise(resolve => setTimeout(resolve, randomDelay));
             
             try {
+                // 如果当前凭证持有 session 绑定，在重试换号时解除该凭证的绑定以让调度器选新凭证
+                const { getSessionAffinityManager } = await import('../providers/session-affinity-manager.js');
+                const sessionManager = getSessionAffinityManager();
+                if (retryContext?.sessionId) {
+                    sessionManager.unbindSession(toProvider, retryContext.sessionId, 'credential_unhealthy_retry');
+                }
+
                 // 动态导入以避免循环依赖
                 const { getApiServiceWithFallback } = await import('../services/service-manager.js');
                 // 使用 acquireSlot: true 以占用新凭证的并发插槽
                 const result = await getApiServiceWithFallback(CONFIG, model, {
                     acquireSlot: true,
-                    excludeUuids: exhaustedUuids
+                    excludeUuids: exhaustedUuids,
+                    sessionId: retryContext?.sessionId,
+                    isRoundRobin: retryContext?.isRoundRobin,
+                    schedulerMode: retryContext?.schedulerMode
                 });
                 
                 if (result && result.service) {
@@ -1819,12 +1829,22 @@ export async function handleUnaryRequest(res, service, model, requestBody, fromP
             if (randomDelay > 0) await new Promise(resolve => setTimeout(resolve, randomDelay));
             
             try {
+                // 如果当前凭证持有 session 绑定，在重试换号时解除该凭证的绑定以让调度器选新凭证
+                const { getSessionAffinityManager } = await import('../providers/session-affinity-manager.js');
+                const sessionManager = getSessionAffinityManager();
+                if (retryContext?.sessionId) {
+                    sessionManager.unbindSession(toProvider, retryContext.sessionId, 'credential_unhealthy_retry');
+                }
+
                 // 动态导入以避免循环依赖
                 const { getApiServiceWithFallback } = await import('../services/service-manager.js');
                 // 使用 acquireSlot: true 以占用新凭证的并发插槽
                 const result = await getApiServiceWithFallback(CONFIG, model, {
                     acquireSlot: true,
-                    excludeUuids: exhaustedUuids
+                    excludeUuids: exhaustedUuids,
+                    sessionId: retryContext?.sessionId,
+                    isRoundRobin: retryContext?.isRoundRobin,
+                    schedulerMode: retryContext?.schedulerMode
                 });
                 
                 if (result && result.service) {
@@ -2088,9 +2108,19 @@ export async function handleContentGenerationRequest(req, res, service, endpoint
     // - 使用号池/AUTO 时按模型重选并支持 fallback
     // 注意：仅在号池场景开启 acquireSlot，占用并发名额或进入队列
     const shouldSelectByPool = providerPoolManager && (CONFIG.MODEL_PROVIDER === MODEL_PROVIDER.AUTO || (CONFIG.providerPools && CONFIG.providerPools[CONFIG.MODEL_PROVIDER]));
+    
+    // 提取会话上下文与调度模式偏好（支持 Sticky Session 提高缓存命中）
+    const { extractSchedulerContext } = await import('../providers/session-affinity-manager.js');
+    const schedulerContext = extractSchedulerContext(req, originalRequestBody, CONFIG.MODEL_PROVIDER);
+
     if (!service || shouldSelectByPool) {
         const { getApiServiceWithFallback } = await import('../services/service-manager.js');
-        const result = await getApiServiceWithFallback(CONFIG, model, { acquireSlot: shouldSelectByPool });
+        const result = await getApiServiceWithFallback(CONFIG, model, {
+            acquireSlot: shouldSelectByPool,
+            sessionId: schedulerContext.sessionId,
+            isRoundRobin: schedulerContext.isRoundRobin,
+            schedulerMode: schedulerContext.mode
+        });
 
         service = result.service;
         toProvider = result.actualProviderType;
@@ -2168,7 +2198,14 @@ export async function handleContentGenerationRequest(req, res, service, endpoint
     // - 凭证切换重试：凭证被标记不健康后切换到其他凭证
     // 当没有不同的健康凭证可用时，重试会自动停止
     const credentialSwitchMaxRetries = CONFIG.CREDENTIAL_SWITCH_MAX_RETRIES || 5;
-    const retryContext = { CONFIG, currentRetry: 0, maxRetries: credentialSwitchMaxRetries };
+    const retryContext = {
+        CONFIG,
+        currentRetry: 0,
+        maxRetries: credentialSwitchMaxRetries,
+        sessionId: schedulerContext.sessionId,
+        isRoundRobin: schedulerContext.isRoundRobin,
+        schedulerMode: schedulerContext.mode
+    };
     
     if (isStream) {
         await handleStreamRequest(res, service, model, processedRequestBody, fromProvider, toProvider, CONFIG.PROMPT_LOG_MODE, PROMPT_LOG_FILENAME, providerPoolManager, actualUuid, actualCustomName, retryContext);
