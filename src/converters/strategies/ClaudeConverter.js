@@ -952,16 +952,22 @@ export class ClaudeConverter extends BaseConverter {
                                 break;
                             
                             // 添加 thinking 块处理
+                            // 上游 Vertex Claude 强校验历史 thinking 块的 signature：
+                            // 缺签名（客户端只回传了思考文本）会 400 "thinking.signature: Field required"，
+                            // 补占位串也会 400 "Invalid signature"。唯一可行做法：
+                            // 没有有效签名的历史 thinking 块直接剔除，只保留正文。
                             case 'thinking':
                                 if (typeof block.thinking === 'string' && block.thinking.length > 0) {
+                                    const hasValidSignature = (block.signature && block.signature.length >= 50) || block.thoughtSignature;
+                                    if (!hasValidSignature) {
+                                        logger.info(`[ClaudeConverter] Dropping historical thinking block without a valid signature (len=${(block.signature || '').length}); upstream requires one.`);
+                                        break;
+                                    }
                                     const thinkingPart = {
                                         text: block.thinking,
                                         thought: true
                                     };
-                                    // 如果有签名，添加 thoughtSignature
-                                    if (block.signature && block.signature.length >= 50) {
-                                        thinkingPart.thoughtSignature = block.signature;
-                                    }
+                                    thinkingPart.thoughtSignature = block.thoughtSignature || block.signature;
                                     parts.push(thinkingPart);
                                 }
                                 break;
@@ -1364,17 +1370,18 @@ export class ClaudeConverter extends BaseConverter {
                     break;
 
                 // 添加 thinking 块处理
+                // 同 toGeminiRequest：无有效签名的历史 thinking 块会被上游 400 拒收，直接剔除。
                 case 'thinking':
                     if (block.thinking) {
-                        const thinkingPart = {
-                            text: block.thinking,
-                            thought: true
-                        };
-                        // 如果有签名，添加 thoughtSignature
-                        if (block.signature && block.signature.length >= 50) {
-                            thinkingPart.thoughtSignature = block.signature;
+                        if (!block.signature || block.signature.length < 50) {
+                            logger.info('[ClaudeConverter] toGeminiResponse: dropping thinking block without a valid signature.');
+                            break;
                         }
-                        parts.push(thinkingPart);
+                        parts.push({
+                            text: block.thinking,
+                            thought: true,
+                            thoughtSignature: block.signature
+                        });
                     }
                     break;
 
