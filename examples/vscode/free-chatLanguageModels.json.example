@@ -1,0 +1,1307 @@
+[
+	{
+		"name": "AIClient2API - Antigravity",
+		"vendor": "customendpoint",
+		"apiType": "chat-completions",
+		"apiKey": "123456",
+		"models": [
+			{
+				"id": "gemini-3.8-flash-high",
+				"name": "Gemini 3.8 Flash High",
+				"url": "http://127.0.0.1:3000/gemini-antigravity/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1048576,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "gemini-3.8-flash-medium",
+				"name": "Gemini 3.8 Flash Medium",
+				"url": "http://127.0.0.1:3000/gemini-antigravity/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1048576,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "gemini-3.8-flash-low",
+				"name": "Gemini 3.8 Flash Low",
+				"url": "http://127.0.0.1:3000/gemini-antigravity/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1048576,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			}
+		]
+	},
+	{
+		"name": "AIClient2API - AI Studio Gemini",
+		"vendor": "customendpoint",
+		"apiType": "chat-completions",
+		"apiKey": "",
+		"models": [
+			{
+				"id": "gemini-2.5-flash",
+				"name": "Gemini 2.5 Flash",
+				"url": "http://127.0.0.1:3000/openai-custom/v1/chat/completions",
+				"apiType": "chat-completions",
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 65536,
+				"toolCalling": false,
+				"vision": true,
+				"streaming": true,
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				}
+			},
+			{
+				"id": "gemini-2.5-flash-lite",
+				"name": "Gemini 2.5 Flash Lite",
+				"url": "http://127.0.0.1:3000/openai-custom/v1/chat/completions",
+				"apiType": "chat-completions",
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true,
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				}
+			},
+			{
+				"id": "gemini-3-flash-preview",
+				"name": "Gemini 3 Flash Preview",
+				"url": "http://127.0.0.1:3000/openai-custom/v1/chat/completions",
+				"apiType": "chat-completions",
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true,
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				}
+			},
+			{
+				"id": "gemini-3.1-flash-lite",
+				"name": "Gemini 3.1 Flash Lite",
+				"url": "http://127.0.0.1:3000/openai-custom/v1/chat/completions",
+				"apiType": "chat-completions",
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true,
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				}
+			},
+			{
+				"id": "gemini-3.1-flash-lite-preview",
+				"name": "Gemini 3.1 Flash Lite Preview",
+				"url": "http://127.0.0.1:3000/openai-custom/v1/chat/completions",
+				"apiType": "chat-completions",
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true,
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				}
+			},
+			{
+				"id": "gemini-3.5-flash",
+				"name": "Gemini 3.5 Flash",
+				"url": "http://127.0.0.1:3000/openai-custom/v1/chat/completions",
+				"apiType": "chat-completions",
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true,
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				}
+			},
+			{
+				"id": "gemini-3.5-flash-lite",
+				"name": "Gemini 3.5 Flash Lite",
+				"url": "http://127.0.0.1:3000/openai-custom/v1/chat/completions",
+				"apiType": "chat-completions",
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true,
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				}
+			},
+			{
+				"id": "gemini-3.6-flash",
+				"name": "Gemini 3.6 Flash",
+				"url": "http://127.0.0.1:3000/openai-custom/v1/chat/completions",
+				"apiType": "chat-completions",
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true,
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				}
+			},
+			{
+				"id": "gemini-flash-latest",
+				"name": "Gemini Flash Latest",
+				"url": "http://127.0.0.1:3000/openai-custom/v1/chat/completions",
+				"apiType": "chat-completions",
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true,
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				}
+			},
+			{
+				"id": "gemini-flash-lite-latest",
+				"name": "Gemini Flash Lite Latest",
+				"url": "http://127.0.0.1:3000/openai-custom/v1/chat/completions",
+				"apiType": "chat-completions",
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true,
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				}
+			},
+			{
+				"id": "gemini-robotics-er-1.6-preview",
+				"name": "Gemini Robotics ER 1.6 Preview",
+				"url": "http://127.0.0.1:3000/openai-custom/v1/chat/completions",
+				"apiType": "chat-completions",
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true,
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				}
+			},
+			{
+				"id": "gemini-robotics-er-2-preview",
+				"name": "Gemini Robotics ER 2 Preview",
+				"url": "http://127.0.0.1:3000/openai-custom/v1/chat/completions",
+				"apiType": "chat-completions",
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true,
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				}
+			},
+			{
+				"id": "gemma-4-26b-a4b-it",
+				"name": "Gemma 4 26B A4B IT",
+				"url": "http://127.0.0.1:3000/openai-custom/v1/chat/completions",
+				"apiType": "chat-completions",
+				"maxInputTokens": 128000,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": false,
+				"streaming": true,
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				}
+			},
+			{
+				"id": "gemma-4-31b-it",
+				"name": "Gemma 4 31B IT",
+				"url": "http://127.0.0.1:3000/openai-custom/v1/chat/completions",
+				"apiType": "chat-completions",
+				"maxInputTokens": 128000,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": false,
+				"streaming": true,
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				}
+			},
+			{
+				"id": "gemini-2.5-computer-use-preview-10-2025",
+				"name": "gemini-2.5-computer-use-preview-10-2025",
+				"url": "http://127.0.0.1:3000/openai-custom-aistudio/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 128000,
+				"maxOutputTokens": 64000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "gemini-2.5-flash-image",
+				"name": "gemini-2.5-flash-image",
+				"url": "http://127.0.0.1:3000/openai-custom-aistudio/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 65536,
+				"maxOutputTokens": 32768,
+				"toolCalling": false,
+				"vision": true,
+				"streaming": false
+			},
+			{
+				"id": "gemini-2.5-pro",
+				"name": "gemini-2.5-pro",
+				"url": "http://127.0.0.1:3000/openai-custom-aistudio/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1048576,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "gemini-3-pro-image",
+				"name": "gemini-3-pro-image",
+				"url": "http://127.0.0.1:3000/openai-custom-aistudio/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 65536,
+				"maxOutputTokens": 32768,
+				"toolCalling": false,
+				"vision": true,
+				"streaming": false
+			},
+			{
+				"id": "gemini-3.1-flash-image",
+				"name": "gemini-3.1-flash-image",
+				"url": "http://127.0.0.1:3000/openai-custom-aistudio/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 131072,
+				"maxOutputTokens": 32768,
+				"toolCalling": false,
+				"vision": true,
+				"streaming": false
+			},
+			{
+				"id": "gemini-3.1-flash-lite-image",
+				"name": "gemini-3.1-flash-lite-image",
+				"url": "http://127.0.0.1:3000/openai-custom-aistudio/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 65536,
+				"maxOutputTokens": 4096,
+				"toolCalling": false,
+				"vision": true,
+				"streaming": false
+			},
+			{
+				"id": "gemini-3.1-pro-preview",
+				"name": "gemini-3.1-pro-preview",
+				"url": "http://127.0.0.1:3000/openai-custom-aistudio/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1048576,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "gemini-3.7-flash",
+				"name": "gemini-3.7-flash",
+				"url": "http://127.0.0.1:3000/openai-custom-aistudio/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1048576,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "gemini-3.8-flash",
+				"name": "gemini-3.8-flash",
+				"url": "http://127.0.0.1:3000/openai-custom-aistudio/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1048576,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "gemini-nano-banana-2.1",
+				"name": "gemini-nano-banana-2.1",
+				"url": "http://127.0.0.1:3000/openai-custom-aistudio/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 131072,
+				"maxOutputTokens": 32768,
+				"toolCalling": false,
+				"vision": true,
+				"streaming": false
+			},
+			{
+				"id": "gemini-omni-1.1-flash",
+				"name": "gemini-omni-1.1-flash",
+				"url": "http://127.0.0.1:3000/openai-custom-aistudio/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 131072,
+				"maxOutputTokens": 32768,
+				"toolCalling": false,
+				"vision": true,
+				"streaming": false
+			},
+			{
+				"id": "gemini-omni-flash-preview",
+				"name": "gemini-omni-flash-preview",
+				"url": "http://127.0.0.1:3000/openai-custom-aistudio/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 131072,
+				"maxOutputTokens": 32768,
+				"toolCalling": false,
+				"vision": true,
+				"streaming": false
+			},
+			{
+				"id": "gemini-pro-latest",
+				"name": "gemini-pro-latest",
+				"url": "http://127.0.0.1:3000/openai-custom-aistudio/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1048576,
+				"maxOutputTokens": 65536,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			}
+		]
+	},
+	{
+		"name": "Copilot",
+		"vendor": "copilot",
+		"settings": {
+			"auto": {
+				"tier": "intelligence"
+			}
+		}
+	},
+	{
+		"name": "AIClient2API - Claude Kiro OAuth",
+		"vendor": "customendpoint",
+		"apiType": "chat-completions",
+		"apiKey": "123456",
+		"models": [
+			{
+				"id": "claude-haiku-4-5",
+				"name": "claude-haiku-4-5",
+				"url": "http://127.0.0.1:3000/claude-kiro-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 200000,
+				"maxOutputTokens": 64000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "claude-haiku-4-5-20251001",
+				"name": "claude-haiku-4-5-20251001",
+				"url": "http://127.0.0.1:3000/claude-kiro-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 200000,
+				"maxOutputTokens": 64000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "claude-opus-4-5",
+				"name": "claude-opus-4-5",
+				"url": "http://127.0.0.1:3000/claude-kiro-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 200000,
+				"maxOutputTokens": 64000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "claude-opus-4-5-20251101",
+				"name": "claude-opus-4-5-20251101",
+				"url": "http://127.0.0.1:3000/claude-kiro-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 200000,
+				"maxOutputTokens": 64000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "claude-opus-4-6",
+				"name": "claude-opus-4-6",
+				"url": "http://127.0.0.1:3000/claude-kiro-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "claude-opus-4-7",
+				"name": "claude-opus-4-7",
+				"url": "http://127.0.0.1:3000/claude-kiro-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "claude-opus-4-8",
+				"name": "claude-opus-4-8",
+				"url": "http://127.0.0.1:3000/claude-kiro-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "claude-opus-5",
+				"name": "claude-opus-5",
+				"url": "http://127.0.0.1:3000/claude-kiro-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "claude-sonnet-4-5",
+				"name": "claude-sonnet-4-5",
+				"url": "http://127.0.0.1:3000/claude-kiro-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 200000,
+				"maxOutputTokens": 64000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "claude-sonnet-4-5-20250929",
+				"name": "claude-sonnet-4-5-20250929",
+				"url": "http://127.0.0.1:3000/claude-kiro-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 200000,
+				"maxOutputTokens": 64000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "claude-sonnet-4-6",
+				"name": "claude-sonnet-4-6",
+				"url": "http://127.0.0.1:3000/claude-kiro-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "claude-sonnet-5",
+				"name": "claude-sonnet-5",
+				"url": "http://127.0.0.1:3000/claude-kiro-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 128000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "gpt-5.6-luna",
+				"name": "gpt-5.6-luna",
+				"url": "http://127.0.0.1:3000/claude-kiro-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 922000,
+				"maxOutputTokens": 128000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "gpt-5.6-sol",
+				"name": "gpt-5.6-sol",
+				"url": "http://127.0.0.1:3000/claude-kiro-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 922000,
+				"maxOutputTokens": 128000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "gpt-5.6-terra",
+				"name": "gpt-5.6-terra",
+				"url": "http://127.0.0.1:3000/claude-kiro-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 922000,
+				"maxOutputTokens": 128000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			}
+		]
+	},
+	{
+		"name": "AIClient2API - OpenAI Codex OAuth",
+		"vendor": "customendpoint",
+		"apiType": "chat-completions",
+		"apiKey": "123456",
+		"models": [
+			{
+				"id": "gpt-5.5",
+				"name": "gpt-5.5",
+				"url": "http://127.0.0.1:3000/openai-codex-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 922000,
+				"maxOutputTokens": 128000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "gpt-5.6-luna",
+				"name": "gpt-5.6-luna",
+				"url": "http://127.0.0.1:3000/openai-codex-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 922000,
+				"maxOutputTokens": 128000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "gpt-5.6-sol",
+				"name": "gpt-5.6-sol",
+				"url": "http://127.0.0.1:3000/openai-codex-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 922000,
+				"maxOutputTokens": 128000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "gpt-5.6-terra",
+				"name": "gpt-5.6-terra",
+				"url": "http://127.0.0.1:3000/openai-codex-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 922000,
+				"maxOutputTokens": 128000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "gpt-6-astra",
+				"name": "gpt-6-astra",
+				"url": "http://127.0.0.1:3000/openai-codex-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 922000,
+				"maxOutputTokens": 128000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "gpt-6-luna",
+				"name": "gpt-6-luna",
+				"url": "http://127.0.0.1:3000/openai-codex-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 922000,
+				"maxOutputTokens": 128000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "gpt-6-sol",
+				"name": "gpt-6-sol",
+				"url": "http://127.0.0.1:3000/openai-codex-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 922000,
+				"maxOutputTokens": 128000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "gpt-6.1-sol",
+				"name": "gpt-6.1-sol",
+				"url": "http://127.0.0.1:3000/openai-codex-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 922000,
+				"maxOutputTokens": 128000,
+				"toolCalling": false,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "gpt-image-2",
+				"name": "gpt-image-2",
+				"url": "http://127.0.0.1:3000/openai-codex-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 32768,
+				"maxOutputTokens": 4096,
+				"toolCalling": false,
+				"vision": true,
+				"streaming": false
+			}
+		]
+	},
+	{
+		"name": "AIClient2API - Grok CLI OAuth",
+		"vendor": "customendpoint",
+		"apiType": "chat-completions",
+		"apiKey": "123456",
+		"models": [
+			{
+				"id": "grok-3",
+				"name": "grok-3",
+				"url": "http://127.0.0.1:3000/grok-cli-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 131072,
+				"maxOutputTokens": 32768,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-3-mini",
+				"name": "grok-3-mini",
+				"url": "http://127.0.0.1:3000/grok-cli-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 131072,
+				"maxOutputTokens": 32768,
+				"toolCalling": true,
+				"vision": false,
+				"streaming": true
+			},
+			{
+				"id": "grok-3-mini-fast",
+				"name": "grok-3-mini-fast",
+				"url": "http://127.0.0.1:3000/grok-cli-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 131072,
+				"maxOutputTokens": 32768,
+				"toolCalling": true,
+				"vision": false,
+				"streaming": true
+			},
+			{
+				"id": "grok-4",
+				"name": "grok-4",
+				"url": "http://127.0.0.1:3000/grok-cli-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 256000,
+				"maxOutputTokens": 256000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-4-fast",
+				"name": "grok-4-fast",
+				"url": "http://127.0.0.1:3000/grok-cli-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 128000,
+				"maxOutputTokens": 128000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-4.20-0309-non-reasoning",
+				"name": "grok-4.20-0309-non-reasoning",
+				"url": "http://127.0.0.1:3000/grok-cli-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 1000000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-4.20-0309-reasoning",
+				"name": "grok-4.20-0309-reasoning",
+				"url": "http://127.0.0.1:3000/grok-cli-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 1000000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-4.20-multi-agent-0309",
+				"name": "grok-4.20-multi-agent-0309",
+				"url": "http://127.0.0.1:3000/grok-cli-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 1000000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-4.3",
+				"name": "grok-4.3",
+				"url": "http://127.0.0.1:3000/grok-cli-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 1000000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-4.5",
+				"name": "grok-4.5",
+				"url": "http://127.0.0.1:3000/grok-cli-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 500000,
+				"maxOutputTokens": 500000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-4.6",
+				"name": "grok-4.6",
+				"url": "http://127.0.0.1:3000/grok-cli-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 500000,
+				"maxOutputTokens": 500000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-build-0.1",
+				"name": "grok-build-0.1",
+				"url": "http://127.0.0.1:3000/grok-cli-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 256000,
+				"maxOutputTokens": 256000,
+				"toolCalling": true,
+				"vision": false,
+				"streaming": true
+			},
+			{
+				"id": "grok-imagine-image",
+				"name": "grok-imagine-image",
+				"url": "http://127.0.0.1:3000/grok-cli-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 32768,
+				"maxOutputTokens": 4096,
+				"toolCalling": false,
+				"vision": true,
+				"streaming": false
+			},
+			{
+				"id": "grok-imagine-image-pro",
+				"name": "grok-imagine-image-pro",
+				"url": "http://127.0.0.1:3000/grok-cli-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 32768,
+				"maxOutputTokens": 4096,
+				"toolCalling": false,
+				"vision": true,
+				"streaming": false
+			},
+			{
+				"id": "grok-imagine-image-quality",
+				"name": "grok-imagine-image-quality",
+				"url": "http://127.0.0.1:3000/grok-cli-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 32768,
+				"maxOutputTokens": 4096,
+				"toolCalling": false,
+				"vision": true,
+				"streaming": false
+			},
+			{
+				"id": "grok-imagine-video",
+				"name": "grok-imagine-video",
+				"url": "http://127.0.0.1:3000/grok-cli-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 32768,
+				"maxOutputTokens": 4096,
+				"toolCalling": false,
+				"vision": true,
+				"streaming": false
+			},
+			{
+				"id": "grok-imagine-video-1.5-2026-05-30",
+				"name": "grok-imagine-video-1.5-2026-05-30",
+				"url": "http://127.0.0.1:3000/grok-cli-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 32768,
+				"maxOutputTokens": 4096,
+				"toolCalling": false,
+				"vision": true,
+				"streaming": false
+			},
+			{
+				"id": "grok-imagine-video-1.5-preview",
+				"name": "grok-imagine-video-1.5-preview",
+				"url": "http://127.0.0.1:3000/grok-cli-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 32768,
+				"maxOutputTokens": 4096,
+				"toolCalling": false,
+				"vision": true,
+				"streaming": false
+			}
+		]
+	},
+	{
+		"name": "AIClient2API - Grok Web",
+		"vendor": "customendpoint",
+		"apiType": "chat-completions",
+		"apiKey": "123456",
+		"models": [
+			{
+				"id": "grok-4.1-mini",
+				"name": "grok-4.1-mini",
+				"url": "http://127.0.0.1:3000/grok-web/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 500000,
+				"maxOutputTokens": 500000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-4.1-thinking",
+				"name": "grok-4.1-thinking",
+				"url": "http://127.0.0.1:3000/grok-web/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 500000,
+				"maxOutputTokens": 500000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-4.20",
+				"name": "grok-4.20",
+				"url": "http://127.0.0.1:3000/grok-web/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 1000000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-4.20-auto",
+				"name": "grok-4.20-auto",
+				"url": "http://127.0.0.1:3000/grok-web/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 1000000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-4.20-expert",
+				"name": "grok-4.20-expert",
+				"url": "http://127.0.0.1:3000/grok-web/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 1000000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-4.20-fast",
+				"name": "grok-4.20-fast",
+				"url": "http://127.0.0.1:3000/grok-web/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 1000000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-4.20-heavy",
+				"name": "grok-4.20-heavy",
+				"url": "http://127.0.0.1:3000/grok-web/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1000000,
+				"maxOutputTokens": 1000000,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-imagine-1.0",
+				"name": "grok-imagine-1.0",
+				"url": "http://127.0.0.1:3000/grok-web/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 131072,
+				"maxOutputTokens": 32768,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-imagine-1.0-edit",
+				"name": "grok-imagine-1.0-edit",
+				"url": "http://127.0.0.1:3000/grok-web/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 131072,
+				"maxOutputTokens": 32768,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-imagine-1.0-fast",
+				"name": "grok-imagine-1.0-fast",
+				"url": "http://127.0.0.1:3000/grok-web/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 131072,
+				"maxOutputTokens": 32768,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "grok-imagine-1.0-fast-edit",
+				"name": "grok-imagine-1.0-fast-edit",
+				"url": "http://127.0.0.1:3000/grok-web/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 131072,
+				"maxOutputTokens": 32768,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			}
+		]
+	},
+	{
+		"name": "AIClient2API - GitHub Copilot OAuth",
+		"vendor": "customendpoint",
+		"apiType": "chat-completions",
+		"apiKey": "123456",
+		"models": [
+			{
+				"id": "auto",
+				"name": "auto",
+				"url": "http://127.0.0.1:3000/github-copilot-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 128000,
+				"maxOutputTokens": 32768,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "auto-efficiency",
+				"name": "Auto (Efficiency)",
+				"url": "http://127.0.0.1:3000/github-copilot-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 128000,
+				"maxOutputTokens": 32768,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "auto-balance",
+				"name": "Auto (Balanced)",
+				"url": "http://127.0.0.1:3000/github-copilot-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 128000,
+				"maxOutputTokens": 32768,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			},
+			{
+				"id": "auto-intelligence",
+				"name": "Auto (Intelligence)",
+				"url": "http://127.0.0.1:3000/github-copilot-oauth/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 128000,
+				"maxOutputTokens": 32768,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			}
+		]
+	},
+	{
+		"name": "AIClient2API - GitHub Copilot",
+		"vendor": "customendpoint",
+		"apiType": "chat-completions",
+		"apiKey": "123456",
+		"models": [
+			{
+				"id": "gpt-4.1",
+				"name": "gpt-4.1",
+				"url": "http://127.0.0.1:3000/github-copilot/v1/chat/completions",
+				"apiType": "chat-completions",
+				"requestHeaders": {
+					"Authorization": "Bearer 123456"
+				},
+				"maxInputTokens": 1047576,
+				"maxOutputTokens": 32768,
+				"toolCalling": true,
+				"vision": true,
+				"streaming": true
+			}
+		]
+	}
+]
