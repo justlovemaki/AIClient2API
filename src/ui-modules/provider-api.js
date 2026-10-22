@@ -398,9 +398,50 @@ function normalizeAntigravityQuota(usage = {}) {
     }]));
 }
 
+function normalizeGrokCliQuota(usage) {
+    const summary = usage?.summary || {};
+    const config = usage?.config || usage || {};
+    const usedPercentage = Number(summary.weeklyLimitPercent ?? config.creditUsagePercent);
+    const periodEnd = summary.periodEnd || config.billingPeriodEnd || null;
+
+    return {
+        available: Number.isFinite(usedPercentage),
+        isFree: !Number.isFinite(usedPercentage),
+        usedPercentage: Number.isFinite(usedPercentage)
+            ? Math.max(0, Math.min(100, usedPercentage))
+            : null,
+        accountTier: summary.grokAccountTier || summary.subscriptionTier || 'Unknown',
+        resetAt: summary.nextResetPt || periodEnd,
+        periodType: summary.periodType || config.currentPeriod?.type || null
+    };
+}
+
+async function getGrokCliTieredModels(providerPools = {}) {
+    const providers = providerPools['grok-cli-oauth'] || [];
+    if (providers.length === 0) return getProviderModels('grok-cli-oauth');
+
+    let hasPaidAccount = false;
+    for (const provider of providers) {
+        try {
+            const adapter = getServiceAdapter({ ...provider, MODEL_PROVIDER: 'grok-cli-oauth' });
+            const usage = await adapter.getUsageLimits();
+            const tier = usage?.summary?.grokAccountTier || usage?.summary?.subscriptionTier;
+            if (tier && tier !== 'Free') {
+                hasPaidAccount = true;
+                break;
+            }
+        } catch {
+            // Free accounts may reject paid usage lookups.
+        }
+    }
+
+    const models = getProviderModels('grok-cli-oauth');
+    return hasPaidAccount ? models : models.filter(model => model.startsWith('grok-4.7-'));
+}
+
 /** Read provider quota for one account node. */
 export async function handleGetProviderQuota(req, res, currentConfig, providerPoolManager, providerType, providerUuid) {
-    if (!['github-copilot', 'openai-codex-oauth', 'gemini-antigravity'].includes(providerType)) {
+    if (!['github-copilot', 'openai-codex-oauth', 'gemini-antigravity', 'grok-cli-oauth'].includes(providerType)) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: { message: 'Quota lookup is not supported for this provider.' } }));
         return true;
@@ -424,7 +465,7 @@ export async function handleGetProviderQuota(req, res, currentConfig, providerPo
         delete serviceConfig.providerPools;
 
         const serviceAdapter = getServiceAdapter(serviceConfig);
-        const method = providerType === 'openai-codex-oauth'
+        const method = providerType === 'openai-codex-oauth' || providerType === 'grok-cli-oauth'
             ? 'getUsageLimits'
             : providerType === 'gemini-antigravity'
                 ? 'getQuotaSummary'
@@ -440,12 +481,23 @@ export async function handleGetProviderQuota(req, res, currentConfig, providerPo
             ? normalizeCodexQuota(rawQuota)
             : providerType === 'gemini-antigravity'
                 ? normalizeAntigravityQuota(rawQuota)
-                : rawQuota;
+                : providerType === 'grok-cli-oauth'
+                    ? normalizeGrokCliQuota(rawQuota)
+                    : rawQuota;
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ providerType, providerUuid, quota }));
         return true;
     } catch (error) {
         logger.warn(`[UI API] ${providerType} quota lookup failed for provider ${providerUuid}: ${error.message}`);
+        if (providerType === 'grok-cli-oauth') {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                providerType,
+                providerUuid,
+                quota: { available: false, isFree: true, accountTier: 'Free', reason: 'paid_usage_unavailable' }
+            }));
+            return true;
+        }
         res.writeHead(502, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: { message: `Unable to retrieve ${providerType} quota.` } }));
         return true;
@@ -505,8 +557,11 @@ export async function handleGetProviderModels(req, res, currentConfig, providerP
         antigravityModels = includeUnavailable ? null : { models: [] };
     }
 
-    allTypes.forEach(type => {
+    for (const type of allTypes) {
         let models = getProviderModels(type);
+        if (type === 'grok-cli-oauth') {
+            models = await getGrokCliTieredModels(providerPools);
+        }
         if (type === 'gemini-antigravity' && antigravityModels !== null) {
             models = antigravityModels.models;
         }
@@ -519,7 +574,7 @@ export async function handleGetProviderModels(req, res, currentConfig, providerP
         if (models && models.length > 0) {
             allModels[type] = models;
         }
-    });
+    }
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(includeUnavailable ? {
@@ -539,7 +594,10 @@ export async function handleGetProviderTypeModels(req, res, currentConfig, provi
     const includeUnavailable = wantsFullModelCatalog(req);
     let modelStatus = {};
     let models = getProviderModels(providerType);
-    if (providerType === 'gemini-antigravity') {
+    if (providerType === 'grok-cli-oauth') {
+        const providerPools = loadProviderPools(currentConfig, providerPoolManager);
+        models = await getGrokCliTieredModels(providerPools);
+    } else if (providerType === 'gemini-antigravity') {
         try {
             const antigravityModels = await getTierAwareAntigravityModels(providerPoolManager, includeUnavailable);
             if (antigravityModels !== null) {
