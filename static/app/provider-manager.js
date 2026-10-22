@@ -11,6 +11,7 @@ import { updateUsageProviderConfigs } from './usage-manager.js';
 import { updateConfigProviderConfigs } from './config-manager.js';
 import { loadConfigList, updateProviderFilterOptions } from './upload-config-manager.js';
 import { setServiceMode } from './event-handlers.js';
+import { createGrokCliQuotaUsageLoader } from './grok-cli-quota-summary.js';
 
 // 保存初始服务器时间和运行时间
 let initialServerTime = null;
@@ -19,6 +20,9 @@ let initialLoadTime = null;
 let isStaticProviderConfigsUpdated = false;
 let cachedSupportedProviders = null;
 let latestProvidersAccessInfo = null;
+const loadGrokCliQuotaUsage = createGrokCliQuotaUsageLoader({
+    apiClient: { get: url => window.apiClient.get(url) }
+});
 
 function navigateToSection(sectionId) {
     const navItem = document.querySelector(`.nav-item[data-section="${sectionId}"]`);
@@ -448,6 +452,12 @@ function renderProviders(providers, supportedProviders = []) {
                     <span class="provider-stat-label" data-i18n="providers.stat.healthyAccounts">${t('providers.stat.healthyAccounts')}</span>
                     <span class="provider-stat-value">${healthyCount}</span>
                 </div>
+                ${providerType === 'grok-cli-oauth' ? `
+                    <div class="provider-stat">
+                        <span class="provider-stat-label" title="${t('providers.grokCliQuota.summaryTitle')}">${t('providers.stat.grokCliQuotaUsed')}</span>
+                        <span class="provider-stat-value" data-grok-cli-quota-summary>${t('providers.grokCliQuota.loading')}</span>
+                    </div>
+                ` : ''}
                 <div class="provider-stat">
                     <span class="provider-stat-label" data-i18n="providers.stat.usageCount">${t('providers.stat.usageCount')}</span>
                     <span class="provider-stat-value">${usageCount}</span>
@@ -471,6 +481,17 @@ function renderProviders(providers, supportedProviders = []) {
         });
 
         container.appendChild(providerDiv);
+
+        if (providerType === 'grok-cli-oauth') {
+            const quotaSummary = providerDiv.querySelector('[data-grok-cli-quota-summary]');
+            loadGrokCliQuotaUsage(accounts).then(summary => {
+                if (!quotaSummary?.isConnected) return;
+                const paidLine = summary.paidAccountCount > 0 ? `Paid: ${summary.usedPercent}/${summary.totalPercent}%` : '';
+                const freeLine = summary.freeAccountCount > 0 ? 'Free: Account usage unavailable' : '';
+                const unavailableLine = summary.unavailableAccountCount > 0 ? t('providers.grokCliQuota.unavailable') : '';
+                quotaSummary.innerHTML = [paidLine, freeLine, unavailableLine].filter(Boolean).join('<br>') || t('providers.grokCliQuota.unavailable');
+            });
+        }
 
         // 为添加分组按钮添加事件监听
         const addGroupBtn = providerDiv.querySelector('.add-group-btn');
