@@ -4112,10 +4112,22 @@ function showAuthModal(authUrl, authInfo) {
     
     // 获取需要开放的端口号（从 authInfo 或当前页面 URL）
     const requiredPort = authInfo.callbackPort || authInfo.port || window.location.port || '3000';
-    const isDeviceFlow = authInfo.provider === 'openai-qwen-oauth' || (authInfo.provider === 'claude-kiro-oauth' && authInfo.authMethod === 'builder-id');
+    const isDeviceFlow = authInfo.method === 'oauth2-device' || authInfo.provider === 'openai-qwen-oauth' || (authInfo.provider === 'claude-kiro-oauth' && authInfo.authMethod === 'builder-id');
 
     let instructionsHtml = '';
-    if (authInfo.provider === 'openai-qwen-oauth') {
+    if (authInfo.method === 'oauth2-device') {
+        instructionsHtml = `
+            <div class="auth-instructions">
+                <h4>授权步骤</h4>
+                <ol>
+                    <li>点击下方按钮打开 xAI 验证页面</li>
+                    <li>确认页面显示的代码：<strong>${authInfo.userCode}</strong></li>
+                    <li>完成授权后，AIClient2API 会自动保存凭据</li>
+                </ol>
+                <p style="margin: 12px 0 0; color: #92400e;">无需将代码粘贴到 Grok Build。</p>
+            </div>
+        `;
+    } else if (authInfo.provider === 'openai-qwen-oauth') {
         instructionsHtml = `
             <div class="auth-instructions">
                 <h4 data-i18n="oauth.modal.steps">${t('oauth.modal.steps')}</h4>
@@ -4245,6 +4257,11 @@ function showAuthModal(authUrl, authInfo) {
                                 <i class="fas fa-copy"></i>
                             </button>
                         </div>
+                        ${authInfo.method === 'oauth2-device' ? `
+                        <div style="margin-top: 12px; padding: 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;">
+                            <strong>验证代码：</strong> <code style="font-size: 1.1rem; letter-spacing: 0.08em;">${authInfo.userCode}</code>
+                        </div>
+                        ` : ''}
                     </div>
                 </div>
             </div>
@@ -4326,9 +4343,13 @@ function showAuthModal(authUrl, authInfo) {
         const isKiroSocial = authInfo.provider === 'claude-kiro-oauth' && authInfo.authMethod === 'social';
         let authWindow;
 
-        if (isKiroSocial) {
+        if (authInfo.method === 'oauth2-device' || isKiroSocial) {
             authWindow = window.open(authUrl, '_blank');
-            showToast(t('common.info'), '已在新标签页打开授权，建议按 F12 开启开发者工具以查看过程日志', 'info');
+            if (authInfo.method === 'oauth2-device') {
+                showToast(t('common.info'), '已在新标签页打开 xAI 验证页面，完成授权后此窗口会自动关闭', 'info');
+            } else {
+                showToast(t('common.info'), '已在新标签页打开授权，建议按 F12 开启开发者工具以查看过程日志', 'info');
+            }
         } else {
             // 使用子窗口打开，以便监听 URL 变化
             const width = 600;
@@ -4392,7 +4413,7 @@ function showAuthModal(authUrl, authInfo) {
             
             // 添加手动输入回调 URL 的 UI
             const urlSection = modal.querySelector('.auth-url-section');
-            if (urlSection && !modal.querySelector('.manual-callback-section')) {
+            if (authInfo.method !== 'oauth2-device' && urlSection && !modal.querySelector('.manual-callback-section')) {
             const manualInputHtml = `
                 <div class="manual-callback-section" style="margin-top: 20px; padding: 15px; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 8px;">
                     <h4 style="color: #92400e; margin-bottom: 8px;"><i class="fas fa-exclamation-circle"></i> <span data-i18n="oauth.manual.title">${t('oauth.manual.title')}</span></h4>
