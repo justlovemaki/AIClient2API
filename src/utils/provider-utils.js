@@ -90,17 +90,6 @@ export const PROVIDER_MAPPINGS = [
         needsProjectId: false,
         urlKeys: ['GROK_CLI_BASE_URL']
     },
-    {
-        // Grok Web 配置
-        dirName: 'grok',
-        patterns: ['configs/grok/', '/grok/'],
-        providerType: 'grok-web',
-        credPathKey: 'GROK_COOKIE_TOKEN',
-        defaultCheckModel: 'grok-4.1-mini',
-        displayName: 'Grok Web',
-        needsProjectId: false,
-        urlKeys: ['GROK_BASE_URL', 'GROK_CF_CLEARANCE', 'GROK_CF_BM', 'GROK_USER_AGENT', 'GROK_STATSIG_ID']
-    }
 ];
 
 /**

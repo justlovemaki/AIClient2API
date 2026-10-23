@@ -1535,11 +1535,10 @@ export class OpenAIConverter extends BaseConverter {
         // 我们需要 GrokConverter 来处理复杂的仿真逻辑
         const { ConverterFactory } = (import.meta.url ? { ConverterFactory: null } : { ConverterFactory: null }); // 这是一个占位，实际会从全局获取
         
-        // 直接返回结构化数据，由 GrokApiService.buildPayload 最终处理
-        // 这样可以保留原始的 messages, tools, tool_choice 以进行高质量仿真
+        // 直接返回结构化数据，保留原始的 messages, tools, tool_choice 以进行高质量仿真
         return {
             ...openaiRequest,
-            // 保持原始结构以便 GrokApiService 处理
+            // 保持原始结构以便后续处理
             _isConverted: true 
         };
     }

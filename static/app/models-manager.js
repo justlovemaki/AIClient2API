@@ -199,8 +199,7 @@ function getProviderDisplayName(providerType) {
         'openai-qwen-oauth': 'Qwen (OAuth)',
         'openai-iflow': 'iFlow',
         'openai-codex-oauth': 'OpenAI Codex (OAuth)',
-        'grok-cli-oauth': 'Grok CLI (OAuth)',
-        'grok-web': 'Grok Web'
+        'grok-cli-oauth': 'Grok CLI (OAuth)'
     };
 
     if (displayNames[providerType]) {

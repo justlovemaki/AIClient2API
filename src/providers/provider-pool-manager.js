@@ -63,7 +63,6 @@ export class ProviderPoolManager {
         'openai-iflow': 'qwen3-max',
         'openai-codex-oauth': 'gpt-5',
         'openaiResponses-custom': 'gpt-5.5',
-        'grok-web': 'grok-4.3',
         'grok-cli-oauth': 'grok-4.3',
         'forward-api': 'gpt-5.5',
         'github-copilot': 'gpt-4.1'
