@@ -94,6 +94,26 @@ describe('Codex Sticky Session and Scheduler Tests', () => {
             expect(ctx.sessionId).toMatch(/^aic2a-[a-f0-9]{32}$/);
             expect(ctx.sessionSource).toBe('codex.prefix_fingerprint');
         });
+
+        test('distinguishes different Chat Completions first messages and preserves appended history identity', () => {
+            const headers = {};
+            const first = extractSchedulerContext(headers, {
+                messages: [{ role: 'user', content: 'first chat' }]
+            }, MODEL_PROVIDER.CODEX_API);
+            const different = extractSchedulerContext(headers, {
+                messages: [{ role: 'user', content: 'different chat' }]
+            }, MODEL_PROVIDER.CODEX_API);
+            const followUp = extractSchedulerContext(headers, {
+                messages: [
+                    { role: 'user', content: 'first chat' },
+                    { role: 'assistant', content: 'acknowledged' },
+                    { role: 'user', content: 'continue' }
+                ]
+            }, MODEL_PROVIDER.CODEX_API);
+
+            expect(first.sessionId).not.toBe(different.sessionId);
+            expect(followUp.sessionId).toBe(first.sessionId);
+        });
     });
 
     describe('SessionAffinityManager', () => {
