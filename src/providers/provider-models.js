@@ -153,6 +153,10 @@ export const PROVIDER_MODELS = {
         'gpt-image-2',
     ],
     'grok-cli-oauth': [
+        'grok-4.7-low',
+        'grok-4.7-medium',
+        'grok-4.7-high',
+        'grok-4.7-extra-high',
         'grok-build-0.1',
         'grok-imagine-image-quality',
         'grok-imagine-image',

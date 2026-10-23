@@ -9,12 +9,14 @@ import { getProviderPoolManager } from '../../services/service-manager.js';
 import { configureTLSSidecar } from '../../utils/proxy-utils.js';
 import { MODEL_PROVIDER, formatExpiryLog, getRetryAfterMs, normalizeProviderErrorMessage } from '../../utils/common.js';
 import { getProviderModels } from '../provider-models.js';
+import { isGrokCliQualityModel, resolveGrokCliQualityModel } from './grok-cli-models.js';
 
 const XAI_DEFAULT_BASE_URL = 'https://api.x.ai/v1';
+const GROK_CLI_DEFAULT_BASE_URL = 'https://cli-chat-proxy.grok.com/v1';
 const XAI_DEFAULT_TOKEN_ENDPOINT = 'https://auth.x.ai/oauth/token';
 const GROK_CLI_DEFAULT_BILLING_URL = 'https://cli-chat-proxy.grok.com/v1/billing?format=credits';
 const GROK_CLI_DEFAULT_SUBSCRIPTIONS_URL = 'https://grok.com/rest/subscriptions';
-const GROK_CLI_CLIENT_VERSION = '0.2.87';
+const GROK_CLI_CLIENT_VERSION = '1.0.13';
 const XAI_REDIRECT_URI = 'http://127.0.0.1:56121/callback';
 const GROK_CLI_DEFAULT_MODEL = 'grok-3-mini';
 const GROK_CLI_MODELS = getProviderModels(MODEL_PROVIDER.GROK_CLI || 'grok-cli-oauth');
@@ -75,6 +77,17 @@ function parseExpiry(value) {
         return new Date(numeric < 10000000000 ? numeric * 1000 : numeric);
     }
     return null;
+}
+
+function parseJwtClaims(token) {
+    if (!token) return {};
+    try {
+        const parts = String(token).split('.');
+        if (parts.length !== 3) return {};
+        return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    } catch {
+        return {};
+    }
 }
 
 function moneyValue(value) {
@@ -1218,7 +1231,7 @@ function extractVideoThumbnailUrl(videoResponse = {}) {
 export class GrokCliApiService {
     constructor(config) {
         this.config = config;
-        this.baseUrl = normalizeBaseUrl(config.GROK_CLI_BASE_URL || config.XAI_BASE_URL);
+        this.baseUrl = normalizeBaseUrl(config.GROK_CLI_BASE_URL || config.XAI_BASE_URL || GROK_CLI_DEFAULT_BASE_URL);
         this.accessToken = null;
         this.refreshTokenValue = null;
         this.idToken = null;
@@ -1294,11 +1307,17 @@ export class GrokCliApiService {
             this.tokenType = creds.token_type || this.tokenType || 'Bearer';
             this.email = creds.email;
             this.subject = creds.sub || creds.subject;
-            this.userId = creds.user_id || creds.userId || this.userId;
-            this.teamId = creds.team_id || creds.teamId || this.teamId;
+            const accessClaims = parseJwtClaims(this.accessToken);
+            this.userId = creds.user_id || creds.userId || accessClaims.principal_id || accessClaims.sub || this.userId;
+            this.teamId = creds.team_id || creds.teamId || accessClaims.team_id || this.teamId;
             this.last_refresh = creds.last_refresh || this.last_refresh;
             this.tokenEndpoint = creds.token_endpoint || this.tokenEndpoint || XAI_DEFAULT_TOKEN_ENDPOINT;
-            this.baseUrl = normalizeBaseUrl(this.config.GROK_CLI_BASE_URL || creds.base_url || this.baseUrl);
+            this.baseUrl = normalizeBaseUrl(
+                this.config.GROK_CLI_BASE_URL ||
+                this.config.XAI_BASE_URL ||
+                (creds.auth_kind === 'oauth' ? GROK_CLI_DEFAULT_BASE_URL : creds.base_url) ||
+                this.baseUrl
+            );
             this.expiresAt = parseExpiry(creds.expired ?? creds.expires_at ?? creds.expiresAt);
 
             if (this.isExpiryDateNear()) {
@@ -1617,6 +1636,9 @@ export class GrokCliApiService {
         }
 
         const normalizedTextModel = normalizeGrokCliTextModel(rawModel);
+        if (isGrokCliQualityModel(normalizedTextModel)) {
+            return normalizedTextModel;
+        }
         if (!GROK_CLI_MODELS.length || GROK_CLI_MODELS.includes(normalizedTextModel)) {
             return normalizedTextModel;
         }
@@ -1643,6 +1665,7 @@ export class GrokCliApiService {
 
     async prepareRequestBody(model, requestBody, stream) {
         const cleanedBody = { ...requestBody };
+        const qualityModel = resolveGrokCliQualityModel(model);
         const metadata = cleanedBody.metadata || {};
         const convertedMessages = Array.isArray(cleanedBody.messages)
             ? convertOpenAIMessagesToResponsesInput(cleanedBody.messages)
@@ -1657,7 +1680,10 @@ export class GrokCliApiService {
             }
         }
 
-        cleanedBody.model = model;
+        cleanedBody.model = qualityModel.model;
+        if (qualityModel.effort && !cleanedBody.reasoning && !cleanedBody.reasoning_effort) {
+            cleanedBody.reasoning_effort = qualityModel.effort;
+        }
         cleanedBody.stream = stream;
         cleanedBody.store = cleanedBody.store ?? false;
 
@@ -1942,6 +1968,9 @@ export class GrokCliApiService {
 
         if (this.userId) {
             headers['x-userid'] = this.userId;
+        }
+        if (this.teamId) {
+            headers['x-teamid'] = this.teamId;
         }
 
         return headers;
