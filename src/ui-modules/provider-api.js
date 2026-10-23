@@ -360,9 +360,47 @@ export function normalizeCodexQuota(usage = {}) {
     };
 }
 
+function normalizeAntigravityQuota(usage = {}) {
+    const familyUsage = { gemini: [], claude: [] };
+    const getFamily = (...names) => {
+        const value = names.filter(Boolean).join(' ').toLowerCase();
+        if (/claude|anthropic|gpt/.test(value)) return 'claude';
+        if (value.includes('gemini')) return 'gemini';
+        return null;
+    };
+    const addBucket = (bucket, familyHint = null) => {
+        if (!bucket || typeof bucket !== 'object') return;
+        const family = familyHint || getFamily(bucket.bucketId, bucket.modelId, bucket.name, bucket.displayName);
+        const remaining = Number(bucket.remainingFraction ?? bucket.remaining_fraction ?? bucket.remaining);
+        if (!family || !Number.isFinite(remaining) || remaining < 0 || remaining > 1) return;
+        familyUsage[family].push(remaining);
+    };
+    const visit = (value, key = '', familyHint = null) => {
+        if (!value || typeof value !== 'object') return;
+        const family = familyHint || getFamily(key, value.modelId, value.bucketId, value.name, value.displayName);
+        if (Array.isArray(value)) {
+            value.forEach(item => visit(item, key, family));
+            return;
+        }
+        if (value.remainingFraction !== undefined || value.remaining_fraction !== undefined || value.remaining !== undefined) {
+            addBucket(value, family);
+        }
+        Object.entries(value).forEach(([childKey, child]) => {
+            if (child && typeof child === 'object') visit(child, childKey, family);
+        });
+    };
+
+    const source = usage?.groups || usage?.buckets || usage?.models || usage;
+    visit(source);
+    return Object.fromEntries(Object.entries(familyUsage).map(([family, values]) => [family, {
+        available: values.length > 0,
+        usedPercentage: values.length > 0 ? Math.max(...values.map(value => Math.round((1 - value) * 100))) : null
+    }]));
+}
+
 /** Read provider quota for one account node. */
 export async function handleGetProviderQuota(req, res, currentConfig, providerPoolManager, providerType, providerUuid) {
-    if (!['github-copilot', 'openai-codex-oauth'].includes(providerType)) {
+    if (!['github-copilot', 'openai-codex-oauth', 'gemini-antigravity'].includes(providerType)) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: { message: 'Quota lookup is not supported for this provider.' } }));
         return true;
@@ -386,7 +424,11 @@ export async function handleGetProviderQuota(req, res, currentConfig, providerPo
         delete serviceConfig.providerPools;
 
         const serviceAdapter = getServiceAdapter(serviceConfig);
-        const method = providerType === 'openai-codex-oauth' ? 'getUsageLimits' : 'getQuota';
+        const method = providerType === 'openai-codex-oauth'
+            ? 'getUsageLimits'
+            : providerType === 'gemini-antigravity'
+                ? 'getQuotaSummary'
+                : 'getQuota';
         if (typeof serviceAdapter[method] !== 'function') {
             res.writeHead(501, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: { message: 'Quota lookup is not supported by this adapter.' } }));
@@ -394,7 +436,11 @@ export async function handleGetProviderQuota(req, res, currentConfig, providerPo
         }
 
         const rawQuota = await serviceAdapter[method]();
-        const quota = providerType === 'openai-codex-oauth' ? normalizeCodexQuota(rawQuota) : rawQuota;
+        const quota = providerType === 'openai-codex-oauth'
+            ? normalizeCodexQuota(rawQuota)
+            : providerType === 'gemini-antigravity'
+                ? normalizeAntigravityQuota(rawQuota)
+                : rawQuota;
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ providerType, providerUuid, quota }));
         return true;
