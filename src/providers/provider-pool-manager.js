@@ -15,6 +15,7 @@ import {
 } from './provider-models.js';
 import { broadcastEvent } from '../ui-modules/event-broadcast.js';
 import { ENDPOINT_TYPE } from '../utils/common.js';
+import { getAntigravitySessionAffinityManager } from './gemini/antigravity-sticky-scheduler.js';
 
 function getCustomModelAliasesForProvider(config, providerType) {
     const customModels = Array.isArray(config?.customModels) ? config.customModels : [];
@@ -30,7 +31,6 @@ function getCustomModelAliasesForProvider(config, providerType) {
             .map(model => model.alias)
     );
 }
-
 function getCustomModelIdsForProvider(config, providerType) {
     const customModels = Array.isArray(config?.customModels) ? config.customModels : [];
     return customModels
@@ -1106,15 +1106,68 @@ export class ProviderPoolManager {
             return null;
         }
 
-        // 改进：使用统一的评分策略进行选择
-        // 传入当前时间戳 now 确保一致性
-        const selected = availableAndHealthyProviders.sort((a, b) => {
-            const scoreA = this._calculateNodeScore(a, now, minSeq);
-            const scoreB = this._calculateNodeScore(b, now, minSeq);
-            if (scoreA !== scoreB) return scoreA - scoreB;
-            // 如果分值相同，使用 UUID 排序确保确定性
-            return a.uuid < b.uuid ? -1 : 1;
-        })[0];
+        const sessionManager = providerType === MODEL_PROVIDER.ANTIGRAVITY
+            ? getAntigravitySessionAffinityManager()
+            : null;
+        const sessionId = options.sessionId;
+        const isRoundRobin = options.isRoundRobin === true || options.schedulerMode === 'round-robin';
+        let selected = null;
+
+        if (sessionManager) {
+            sessionManager.noteRequest();
+            for (const provider of availableAndHealthyProviders) {
+                const providerConfig = {
+                    ...this.globalConfig,
+                    ...provider.config,
+                    MODEL_PROVIDER: MODEL_PROVIDER.ANTIGRAVITY,
+                    uuid: provider.config.uuid
+                };
+                if (sessionManager.shouldRefresh(provider.config.uuid, now)) {
+                    const serviceAdapter = getServiceAdapter(providerConfig);
+                    if (typeof serviceAdapter?.getUsageLimits === 'function') {
+                        void sessionManager.refreshQuota(provider.config.uuid, () => serviceAdapter.getUsageLimits());
+                    }
+                }
+            }
+        }
+
+        if (sessionManager && sessionId && !isRoundRobin) {
+            const boundUuid = sessionManager.getBinding(sessionId);
+            selected = availableAndHealthyProviders.find(provider => (
+                provider.config.uuid === boundUuid &&
+                !sessionManager.isQuotaExhausted(provider.config.uuid, requestedModel, now)
+            )) || null;
+            if (boundUuid && !selected) {
+                sessionManager.unbindSession(sessionId, 'bound account unavailable or quota exhausted');
+            }
+        }
+
+        if (!selected) {
+            const rankedProviders = sessionManager && !isRoundRobin
+                ? sessionManager.rankInitialProviders(availableAndHealthyProviders, requestedModel, now)
+                : availableAndHealthyProviders;
+            if (rankedProviders.length === 0) {
+                this._log('warn', `No Antigravity providers have quota available for model: ${requestedModel}`);
+                return null;
+            }
+            selected = [...rankedProviders].sort((a, b) => {
+                const quotaScoreA = sessionManager?.getQuotaScore(a.config.uuid, requestedModel, now);
+                const quotaScoreB = sessionManager?.getQuotaScore(b.config.uuid, requestedModel, now);
+                if (quotaScoreA !== null && quotaScoreB === null) return -1;
+                if (quotaScoreA === null && quotaScoreB !== null) return 1;
+                if (quotaScoreA !== null && quotaScoreB !== null && quotaScoreA !== quotaScoreB) {
+                    return quotaScoreB - quotaScoreA;
+                }
+                const scoreA = this._calculateNodeScore(a, now, minSeq);
+                const scoreB = this._calculateNodeScore(b, now, minSeq);
+                if (scoreA !== scoreB) return scoreA - scoreB;
+                return a.uuid < b.uuid ? -1 : 1;
+            })[0];
+
+            if (sessionManager && sessionId && !isRoundRobin) {
+                sessionManager.bindSession(sessionId, selected.config.uuid);
+            }
+        }
 
         // 始终更新 lastUsed（确保 LRU 策略生效，避免并发请求选到同一个 provider）
         // usageCount 只在请求成功后才增加（由 skipUsageCount 控制）
