@@ -524,6 +524,7 @@ function getProviderTypeFields(providerType) {
                 placeholder: 'https://api.x.ai/v1'
             }
         ],
+        'forward-api': [
             {
                 id: 'FORWARD_API_KEY',
                 label: t('modal.provider.field.apiKey'),

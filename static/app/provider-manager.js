@@ -2078,7 +2078,6 @@ function showCodexExternalImportModal(providerType, source) {
         }
     };
 }
-}
 
 /**
  * 显示 Kiro OAuth 认证方式选择对话框
