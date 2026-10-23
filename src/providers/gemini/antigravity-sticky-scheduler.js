@@ -18,6 +18,7 @@ function quotaFamilyForBucket(value, key) {
     for (const name of names) {
         const normalized = String(name || '').toLowerCase();
         if (normalized.startsWith('3p-')) return '3p';
+        if (normalized.startsWith('gemini-claude-') || normalized.startsWith('claude-') || normalized.startsWith('gpt-oss-')) return '3p';
         if (normalized.startsWith('gemini-')) return 'gemini';
     }
     return null;
@@ -25,16 +26,21 @@ function quotaFamilyForBucket(value, key) {
 
 function readQuotaWindows(usage) {
     const buckets = [];
-    const visit = (value, key) => {
+    const visit = (value, key, parentModelId = null) => {
         if (!value || typeof value !== 'object') return;
+        const normalizedKey = String(key || '').toLowerCase();
+        const keyLooksLikeModel = normalizedKey.startsWith('gemini-') ||
+            normalizedKey.startsWith('claude-') ||
+            normalizedKey.startsWith('gpt-oss-');
+        const modelId = keyLooksLikeModel ? key : parentModelId;
         const remaining = value.remainingFraction ?? value.remaining_fraction ?? value.remaining;
         const resetAt = value.resetAt ?? value.reset_at ?? value.resetTime;
         if (typeof remaining === 'number' && Number.isFinite(remaining) && remaining >= 0 && remaining <= 1) {
-            const family = quotaFamilyForBucket(value, key);
+            const family = quotaFamilyForBucket({ ...value, modelId }, key);
             if (family) buckets.push({ family, remaining, resetAt });
         }
         for (const [childKey, child] of Object.entries(value)) {
-            if (child && typeof child === 'object') visit(child, childKey);
+            if (child && typeof child === 'object') visit(child, childKey, modelId);
         }
     };
     visit(usage);
@@ -67,7 +73,11 @@ function quotaScore(snapshot, family, now = Date.now()) {
 }
 
 function firstUserText(requestBody) {
-    const messages = Array.isArray(requestBody?.messages) ? requestBody.messages : [];
+    const messages = Array.isArray(requestBody?.messages)
+        ? requestBody.messages
+        : Array.isArray(requestBody?.contents)
+            ? requestBody.contents
+            : [];
     const userMessage = messages.find(message => message?.role === 'user');
     if (!userMessage) return null;
 
@@ -75,8 +85,13 @@ function firstUserText(requestBody) {
         return userMessage.content.trim();
     }
 
-    if (Array.isArray(userMessage.content)) {
-        const textPart = userMessage.content.find(part => typeof part?.text === 'string' && part.text.trim());
+    const parts = Array.isArray(userMessage.content)
+        ? userMessage.content
+        : Array.isArray(userMessage.parts)
+            ? userMessage.parts
+            : [];
+    if (parts.length > 0) {
+        const textPart = parts.find(part => typeof part?.text === 'string' && part.text.trim());
         if (textPart) return textPart.text.trim();
     }
 

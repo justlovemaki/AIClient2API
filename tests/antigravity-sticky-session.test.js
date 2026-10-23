@@ -73,6 +73,23 @@ describe('Antigravity sticky session scheduler', () => {
         expect(second.sessionId).toBe(first.sessionId);
     });
 
+    test('derives a stable session ID from native Gemini contents parts', () => {
+        const first = extractAntigravitySchedulerContext(
+            { headers: {} },
+            { contents: [{ role: 'user', parts: [{ text: 'start this native Gemini task' }] }] }
+        );
+        const second = extractAntigravitySchedulerContext(
+            { headers: {} },
+            { contents: [
+                { role: 'user', parts: [{ text: 'start this native Gemini task' }] },
+                { role: 'model', parts: [{ text: 'acknowledged' }] }
+            ] }
+        );
+
+        expect(first.sessionId).toMatch(/^-[0-9]+$/);
+        expect(second.sessionId).toBe(first.sessionId);
+    });
+
     test('does not invent a session ID for an empty single-turn request', () => {
         const context = extractAntigravitySchedulerContext({ headers: {} }, { messages: [] });
         expect(context.sessionId).toBeNull();
@@ -140,6 +157,64 @@ describe('Antigravity sticky session scheduler', () => {
             sessionId: 'quota-session'
         });
         expect(second.uuid).toBe(first.uuid);
+    });
+
+    test('uses the parent model ID when quotaInfo is nested in a real usage response', () => {
+        const manager = new AntigravitySessionAffinityManager();
+        const resetTime = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+        manager.updateQuota('gemini-account', {
+            models: {
+                'gemini-3.8-flash-low': {
+                    quotaInfo: {
+                        remainingFraction: 0.75,
+                        resetTime
+                    }
+                },
+                'gemini-claude-sonnet-4-6': {
+                    quotaInfo: {
+                        remainingFraction: 0.25,
+                        resetTime
+                    }
+                }
+            }
+        });
+
+        expect(manager.getQuotaScore('gemini-account', 'gemini-3.8-flash-low')).toBeGreaterThan(0);
+        expect(manager.getQuotaScore('gemini-account', 'gemini-claude-sonnet-4-6')).toBeGreaterThan(0);
+        expect(manager.isQuotaExhausted('gemini-account', 'gemini-3.8-flash-low')).toBe(false);
+    });
+
+    test('keeps quota priority ahead of LRU ordering', async () => {
+        const pool = createPoolManager([
+            { uuid: 'quota-high', lastUsed: new Date().toISOString() },
+            { uuid: 'quota-low', lastUsed: new Date(0).toISOString() }
+        ]);
+        const manager = getAntigravitySessionAffinityManager();
+        const resetTime = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+        manager.updateQuota('quota-high', {
+            models: { 'gemini-3.8-flash-low': { quotaInfo: { remainingFraction: 0.9, resetTime } } }
+        });
+        manager.updateQuota('quota-low', {
+            models: { 'gemini-3.8-flash-low': { quotaInfo: { remainingFraction: 0.1, resetTime } } }
+        });
+
+        await expect(pool.selectProvider(MODEL_PROVIDER.ANTIGRAVITY, 'gemini-3.8-flash-low'))
+            .resolves.toMatchObject({ uuid: 'quota-high' });
+    });
+
+    test('does not construct an adapter when a quota snapshot is fresh', async () => {
+        const pool = createPoolManager([{ uuid: 'fresh-quota' }]);
+        const manager = getAntigravitySessionAffinityManager();
+        manager.updateQuota('fresh-quota', {
+            models: { 'gemini-3.8-flash-low': { quotaInfo: { remainingFraction: 0.8 } } }
+        });
+        const { getServiceAdapter } = await import('../src/providers/adapter.js');
+        getServiceAdapter.mockClear();
+
+        await pool.selectProvider(MODEL_PROVIDER.ANTIGRAVITY, 'gemini-3.8-flash-low');
+
+        expect(getServiceAdapter).not.toHaveBeenCalled();
     });
 
     test('refreshes quota asynchronously and caches the result', async () => {

@@ -2066,6 +2066,9 @@ export async function handleContentGenerationRequest(req, res, service, endpoint
         throw new Error("Request body is missing for content generation.");
     }
 
+    const { extractAntigravitySchedulerContext } = await import('../providers/gemini/antigravity-sticky-scheduler.js');
+    const schedulerContext = extractAntigravitySchedulerContext(req, originalRequestBody);
+
     const clientProviderMap = {
         [ENDPOINT_TYPE.OPENAI_CHAT]: MODEL_PROTOCOL_PREFIX.OPENAI,
         [ENDPOINT_TYPE.OPENAI_RESPONSES]: MODEL_PROTOCOL_PREFIX.OPENAI_RESPONSES,
@@ -2111,10 +2114,6 @@ export async function handleContentGenerationRequest(req, res, service, endpoint
     logger.info(`[Content Generation] Model: ${model}, Stream: ${isStream}`);
 
     let actualCustomName = CONFIG.customName;
-    const { extractAntigravitySchedulerContext } = await import('../providers/gemini/antigravity-sticky-scheduler.js');
-    const schedulerContext = CONFIG.MODEL_PROVIDER === MODEL_PROVIDER.ANTIGRAVITY
-        ? extractAntigravitySchedulerContext(req, originalRequestBody)
-        : { sessionId: null, isRoundRobin: false, mode: 'sticky' };
 
     // 2.5. 根据模型选择服务适配器：
     // - service 缺失时（例如上游未预先注入）进行兜底选择
