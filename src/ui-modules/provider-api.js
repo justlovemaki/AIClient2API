@@ -398,29 +398,33 @@ function normalizeAntigravityQuota(usage = {}) {
     }]));
 }
 
-function normalizeGrokCliQuota(usage) {
+export function normalizeGrokCliQuota(usage) {
     const summary = usage?.summary || {};
     const config = usage?.config || usage || {};
     const usedPercentage = Number(summary.weeklyLimitPercent ?? config.creditUsagePercent);
     const periodEnd = summary.periodEnd || config.billingPeriodEnd || null;
 
+    const accountTier = summary.grokAccountTier || summary.subscriptionTier || 'Unknown';
+    const isFree = accountTier === 'Free';
     return {
         available: Number.isFinite(usedPercentage),
-        isFree: !Number.isFinite(usedPercentage),
+        isFree,
         usedPercentage: Number.isFinite(usedPercentage)
             ? Math.max(0, Math.min(100, usedPercentage))
             : null,
-        accountTier: summary.grokAccountTier || summary.subscriptionTier || 'Unknown',
+        accountTier,
+        tierStatus: accountTier === 'Free' ? 'free' : accountTier === 'Unknown' ? 'unknown' : 'paid',
         resetAt: summary.nextResetPt || periodEnd,
         periodType: summary.periodType || config.currentPeriod?.type || null
     };
 }
 
-async function getGrokCliTieredModels(providerPools = {}) {
+export async function getGrokCliTieredModels(providerPools = {}) {
     const providers = providerPools['grok-cli-oauth'] || [];
     if (providers.length === 0) return getProviderModels('grok-cli-oauth');
 
     let hasPaidAccount = false;
+    let hasUnknownTier = false;
     for (const provider of providers) {
         try {
             const adapter = getServiceAdapter({ ...provider, MODEL_PROVIDER: 'grok-cli-oauth' });
@@ -430,13 +434,24 @@ async function getGrokCliTieredModels(providerPools = {}) {
                 hasPaidAccount = true;
                 break;
             }
+            if (!tier) hasUnknownTier = true;
         } catch {
-            // Free accounts may reject paid usage lookups.
+            const lastKnownTier = provider.lastKnownTier || provider.accountTier;
+            if (lastKnownTier) {
+                if (lastKnownTier !== 'Free') {
+                    hasPaidAccount = true;
+                    break;
+                }
+                continue;
+            }
+            hasUnknownTier = true;
         }
     }
 
     const models = getProviderModels('grok-cli-oauth');
-    return hasPaidAccount ? models : models.filter(model => model.startsWith('grok-4.7-'));
+    if (hasPaidAccount) return models;
+    if (hasUnknownTier) return models;
+    return models.filter(model => model.startsWith('grok-4.7-'));
 }
 
 /** Read provider quota for one account node. */
@@ -494,7 +509,7 @@ export async function handleGetProviderQuota(req, res, currentConfig, providerPo
             res.end(JSON.stringify({
                 providerType,
                 providerUuid,
-                quota: { available: false, isFree: true, accountTier: 'Free', reason: 'paid_usage_unavailable' }
+                quota: { available: false, isFree: false, accountTier: 'Unknown', tierStatus: 'unknown', reason: 'tier_lookup_failed' }
             }));
             return true;
         }

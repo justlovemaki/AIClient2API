@@ -157,7 +157,7 @@ function validateOAuthEndpoint(rawUrl, field) {
     return value;
 }
 
-class GrokCliAuth {
+export class GrokCliAuth {
     constructor(config) {
         this.config = config;
         const axiosConfig = { timeout: 30000 };
@@ -276,29 +276,56 @@ class GrokCliAuth {
         const deadline = Date.now() + deviceCode.expires_in * 1000;
         let interval = deviceCode.interval;
 
+        const postWithCancellation = async requestBody => {
+            const controller = new AbortController();
+            const cancellationWatcher = new Promise((_, reject) => {
+                const timer = setInterval(() => {
+                    if (!isCancelled()) return;
+                    clearInterval(timer);
+                    controller.abort();
+                    reject(new Error('Grok CLI authorization session was replaced'));
+                }, 25);
+                controller.signal.addEventListener('abort', () => clearInterval(timer), { once: true });
+            });
+            try {
+                return await Promise.race([
+                    this.httpClient.post(endpoint, requestBody, {
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'Accept': 'application/json',
+                            'x-grok-client-surface': 'ui'
+                        },
+                        validateStatus: () => true,
+                        signal: controller.signal
+                    }),
+                    cancellationWatcher
+                ]);
+            } finally {
+                controller.abort();
+            }
+        };
+
         while (Date.now() < deadline) {
             if (isCancelled()) {
                 throw new Error('Grok CLI authorization session was replaced');
             }
 
             await new Promise(resolve => setTimeout(resolve, interval * 1000));
+            if (isCancelled()) {
+                throw new Error('Grok CLI authorization session was replaced');
+            }
 
-            const response = await this.httpClient.post(
-                endpoint,
+            const response = await postWithCancellation(
                 new URLSearchParams({
                     grant_type: GROK_CLI_OAUTH_CONFIG.deviceGrantType,
                     device_code: deviceCode.device_code,
                     client_id: GROK_CLI_OAUTH_CONFIG.clientId
-                }).toString(),
-                {
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'Accept': 'application/json',
-                        'x-grok-client-surface': 'ui'
-                    },
-                    validateStatus: () => true
-                }
+                }).toString()
             );
+
+            if (isCancelled()) {
+                throw new Error('Grok CLI authorization session was replaced');
+            }
 
             if (response.status >= 200 && response.status < 300) {
                 return response.data;
@@ -811,13 +838,22 @@ export async function handleGrokCliOAuth(currentConfig, options = {}) {
                     tokenEndpoint,
                     () => session.cancelled || global.grokCliOAuthSessions.get(sessionId) !== session
                 );
+                if (session.cancelled || global.grokCliOAuthSessions.get(sessionId) !== session) {
+                    return;
+                }
                 const claims = auth.parseJWT(tokens.id_token);
                 const credentials = auth.buildCredentials(tokens, {
                     email: claims.email,
                     sub: claims.sub,
                     tokenEndpoint
                 });
+                if (session.cancelled || global.grokCliOAuthSessions.get(sessionId) !== session) {
+                    return;
+                }
                 const saveResult = await auth.saveCredentials(credentials);
+                if (session.cancelled || global.grokCliOAuthSessions.get(sessionId) !== session) {
+                    return;
+                }
                 const savedCredentials = {
                     ...credentials,
                     credPath: saveResult.credsPath,
@@ -825,6 +861,10 @@ export async function handleGrokCliOAuth(currentConfig, options = {}) {
                 };
 
                 global.grokCliOAuthSessions.delete(sessionId);
+
+                if (session.cancelled) {
+                    return;
+                }
 
                 broadcastEvent('oauth_success', {
                     provider: GROK_CLI_PROVIDER,
