@@ -18,7 +18,6 @@ export class UsageService {
             [MODEL_PROVIDER.GEMINI_CLI]: this.getGeminiUsage.bind(this),
             [MODEL_PROVIDER.ANTIGRAVITY]: this.getAntigravityUsage.bind(this),
             [MODEL_PROVIDER.CODEX_API]: this.getCodexUsage.bind(this),
-            [MODEL_PROVIDER.GROK_WEB]: this.getGrokUsage.bind(this),
             [MODEL_PROVIDER.GROK_CLI]: this.getGrokCliUsage.bind(this),
         };
 
@@ -28,7 +27,6 @@ export class UsageService {
             [MODEL_PROVIDER.GEMINI_CLI]: formatGeminiUsage,
             [MODEL_PROVIDER.ANTIGRAVITY]: formatAntigravityUsage,
             [MODEL_PROVIDER.CODEX_API]: formatCodexUsage,
-            [MODEL_PROVIDER.GROK_WEB]: formatGrokUsage,
             [MODEL_PROVIDER.GROK_CLI]: formatGrokCliUsage,
         };
     }
@@ -180,13 +178,6 @@ export class UsageService {
      */
     async getCodexUsage(uuid = null) {
         return this._getRawUsageFromAdapter(MODEL_PROVIDER.CODEX_API, uuid);
-    }
-
-    /**
-     * 获取 Grok 提供商的用量信息
-     */
-    async getGrokUsage(uuid = null) {
-        return this._getRawUsageFromAdapter(MODEL_PROVIDER.GROK_WEB, uuid);
     }
 
     /**

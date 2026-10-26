@@ -34,11 +34,6 @@ export {
     refreshIFlowTokens
 } from './iflow-oauth.js';
 
-// Grok Auth
-export {
-    batchImportGrokTokensStream
-} from './grok-auth.js';
-
 // Grok CLI OAuth
 export {
     refreshGrokCliTokensWithRetry,

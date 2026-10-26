@@ -8,7 +8,6 @@ import { QwenApiService } from './openai/qwen-core.js';
 import { IFlowApiService } from './openai/iflow-core.js';
 import { CodexApiService } from './openai/codex-core.js';
 import { ForwardApiService } from './forward/forward-core.js';
-import { GrokApiService } from './grok/grok-core.js';
 import { GrokCliApiService } from './grok/grok-cli-core.js';
 import { GitHubCopilotApiService } from './github/github-copilot-core.js';
 import { MODEL_PROVIDER } from '../utils/constants.js';
@@ -657,58 +656,6 @@ export class ForwardApiServiceAdapter extends ApiServiceAdapter {
     }
 }
 
-// Grok API 服务适配器
-export class GrokApiServiceAdapter extends ApiServiceAdapter {
-    constructor(config) {
-        super();
-        this.grokApiService = new GrokApiService(config);
-    }
-
-    async generateContent(model, requestBody) {
-        if (!this.grokApiService.isInitialized) {
-            await this.grokApiService.initialize();
-        }
-        return this.grokApiService.generateContent(model, requestBody);
-    }
-
-    async *generateContentStream(model, requestBody) {
-        if (!this.grokApiService.isInitialized) {
-            await this.grokApiService.initialize();
-        }
-        yield* this.grokApiService.generateContentStream(model, requestBody);
-    }
-
-    async listModels() {
-        if (!this.grokApiService.isInitialized) {
-            await this.grokApiService.initialize();
-        }
-        return this.grokApiService.listModels();
-    }
-
-    async refreshToken() {
-        return this.grokApiService.refreshToken();
-    }
-
-    async forceRefreshToken() {
-        return this.grokApiService.refreshToken();
-    }
-
-    isExpiryDateNear() {
-        return this.grokApiService.isExpiryDateNear();
-    }
-
-    /**
-     * 获取用量限制信息
-     * @returns {Promise<Object>} 用量限制信息
-     */
-    async getUsageLimits() {
-        if (!this.grokApiService.isInitialized) {
-            await this.grokApiService.initialize();
-        }
-        return this.grokApiService.getUsageLimits();
-    }
-}
-
 // Grok CLI OAuth / xAI Responses API 服务适配器
 export class GrokCliApiServiceAdapter extends ApiServiceAdapter {
     constructor(config) {
@@ -807,7 +754,6 @@ registerAdapter(MODEL_PROVIDER.ANTIGRAVITY, AntigravityApiServiceAdapter);
 registerAdapter(MODEL_PROVIDER.KIRO_API, KiroApiServiceAdapter);
 registerAdapter(MODEL_PROVIDER.CODEX_API, CodexApiServiceAdapter);
 registerAdapter(MODEL_PROVIDER.GROK_CLI, GrokCliApiServiceAdapter);
-registerAdapter(MODEL_PROVIDER.GROK_WEB, GrokApiServiceAdapter);
 registerAdapter(MODEL_PROVIDER.GITHUB_COPILOT, GitHubCopilotApiServiceAdapter);
 // registerAdapter(MODEL_PROVIDER.FORWARD_API, ForwardApiServiceAdapter);
 // registerAdapter(MODEL_PROVIDER.QWEN_API, QwenApiServiceAdapter);

@@ -83,7 +83,7 @@ export async function handleGrokAssetsProxy(req, res, config, providerPoolManage
         };
 
         // 配置代理
-        configureAxiosProxy(axiosConfig, config, MODEL_PROVIDER.GROK_WEB);
+        configureAxiosProxy(axiosConfig, config, MODEL_PROVIDER.GROK_CLI);
 
         logger.debug(`[Grok Proxy] Proxying request to: ${finalTargetUrl}`);
 

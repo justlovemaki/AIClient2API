@@ -98,12 +98,6 @@ function getBaseProviderConfigs() {
             defaultPath: 'configs/iflow/'
         },
         { 
-            id: 'grok-web', 
-            name: t('dashboard.routing.nodeName.grok'), 
-            usageName: 'Grok Web',
-            icon: 'fa-user-secret'
-        },
-        { 
             id: 'openai-custom', 
             name: t('dashboard.routing.nodeName.openai'), 
             icon: 'fa-microchip'
@@ -528,44 +522,6 @@ function getProviderTypeFields(providerType) {
                 label: `xAI Base URL <span class="optional-tag">${t('config.optional')}</span>`,
                 type: 'text',
                 placeholder: 'https://api.x.ai/v1'
-            }
-        ],
-        'grok-web': [
-            {
-                id: 'GROK_COOKIE_TOKEN',
-                label: t('modal.provider.field.ssoToken'),
-                type: 'password',
-                placeholder: 'sso cookie token'
-            },
-            {
-                id: 'GROK_BASE_URL',
-                label: `${t('modal.provider.field.grokBaseUrl')} <span class="optional-tag">${t('config.optional')}</span>`,
-                type: 'text',
-                placeholder: 'https://grok.com'
-            },
-            {
-                id: 'GROK_CF_CLEARANCE',
-                label: `${t('modal.provider.field.cfClearance')} <span class="optional-tag">${t('config.optional')}</span>`,
-                type: 'text',
-                placeholder: 'cf_clearance cookie value'
-            },
-            {
-                id: 'GROK_CF_BM',
-                label: `${t('modal.provider.field.cfBm')} <span class="optional-tag">${t('config.optional')}</span>`,
-                type: 'text',
-                placeholder: '__cf_bm cookie value'
-            },
-            {
-                id: 'GROK_USER_AGENT',
-                label: `${t('modal.provider.field.userAgent')} <span class="optional-tag">${t('config.optional')}</span>`,
-                type: 'text',
-                placeholder: 'Mozilla/5.0 ...'
-            },
-            {
-                id: 'GROK_STATSIG_ID',
-                label: `${t('modal.provider.field.statsigId')} <span class="optional-tag">${t('config.optional')}</span>`,
-                type: 'text',
-                placeholder: 'x-statsig-id header value'
             }
         ],
         'forward-api': [
