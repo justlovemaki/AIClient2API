@@ -15,6 +15,13 @@ function hashCacheSeed(value) {
     return crypto.createHash('sha256').update(serialized).digest('hex');
 }
 
+function getMessagesPrefix(messages) {
+    if (!Array.isArray(messages)) return [];
+
+    const firstUserIndex = messages.findIndex(message => message?.role === 'user');
+    return messages.slice(0, firstUserIndex >= 0 ? firstUserIndex + 1 : 1);
+}
+
 /**
  * Resolve one stable cache identity for the Codex request body and session headers.
  *
@@ -37,13 +44,13 @@ export function resolveCodexCacheIdentity(requestBody, metadata = {}) {
         }
     }
 
-    // The first input item remains unchanged in normal append-only conversations. Including
-    // instructions and tools prevents unrelated prompts from sharing one global "default" key
-    // while keeping the result stable across processes and model switches.
+    // The first input/message prefix remains unchanged in normal append-only conversations.
+    // Include both protocols because the scheduler sees the raw request before conversion.
     const prefixSeed = {
         instructions: requestBody?.instructions || '',
         tools: Array.isArray(requestBody?.tools) ? requestBody.tools : [],
-        input: Array.isArray(requestBody?.input) ? requestBody.input.slice(0, 1) : requestBody?.input || ''
+        input: Array.isArray(requestBody?.input) ? requestBody.input.slice(0, 1) : requestBody?.input || '',
+        messages: getMessagesPrefix(requestBody?.messages)
     };
     const fingerprint = hashCacheSeed(prefixSeed).slice(0, 32);
     return {key: `aic2a-${fingerprint}`, source: 'prefix_fingerprint'};
