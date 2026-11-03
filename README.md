@@ -531,6 +531,7 @@ Notes:
 2. **Browser Login**: The system opens the OpenAI Codex authorization page to complete OAuth login
 3. **Auto Save**: After successful authorization, the system automatically saves the Codex OAuth credential file
 4. **Callback Port**: Ensure the OAuth callback port `1455` is not occupied
+5. **Image Helper Model**: `gpt-image-2` / `gpt-image-2-fast` generate images through a mainline Codex model that supports the `image_generation` tool. Set `"CODEX_IMAGE_HELPER_MODEL": "gpt-5.6-sol"` globally in `configs/config.json`, or set the same field on an individual Codex node in `configs/provider_pools.json` to override it (node configuration wins). The model must be available to the account and support `image_generation`; it cannot be a `gpt-image-*` model. Blank or non-string values fall back to `gpt-5.6-sol`.
 
 #### Grok CLI OAuth Configuration
 1. **Generate Authorization**: On the Web UI "Provider Pools" or "Configuration" page, click the "Generate Authorization" button for Grok CLI

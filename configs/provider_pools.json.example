@@ -115,6 +115,22 @@
       "lastErrorTime": null
     }
   ],
+  "openai-codex-oauth": [
+    {
+      "customName": "Codex OAuth节点1",
+      "CODEX_OAUTH_CREDS_FILE_PATH": "./configs/codex/codex-oauth-creds.json",
+      "CODEX_IMAGE_HELPER_MODEL": "gpt-5.6-sol",
+      "checkModelName": null,
+      "checkHealth": false,
+      "uuid": "d284628d-302f-456d-91f3-609538678967",
+      "isHealthy": true,
+      "isDisabled": false,
+      "lastUsed": null,
+      "usageCount": 0,
+      "errorCount": 0,
+      "lastErrorTime": null
+    }
+  ],
   "gemini-cli-oauth": [
     {
       "customName": "Gemini OAuth节点1",

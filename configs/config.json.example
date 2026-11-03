@@ -24,6 +24,7 @@
     "CRON_REFRESH_TOKEN": false,
     "PROVIDER_POOLS_FILE_PATH": "configs/provider_pools.json",
     "CUSTOM_MODELS_FILE_PATH": "configs/custom_models.json",
+    "CODEX_IMAGE_HELPER_MODEL": "gpt-5.6-sol",
     "MAX_ERROR_COUNT": 3,
     "GROK_COOKIE_TOKEN": "your-sso-cookie-token",
     "GROK_CF_CLEARANCE": "your-cf-clearance-cookie",

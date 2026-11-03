@@ -529,6 +529,7 @@ curl http://localhost:3000/claude-kiro-oauth/v1/chat/completions \
 2. **ブラウザログイン**：システムがOpenAI Codex認証ページを開き、OAuthログインを完了
 3. **自動保存**：認証成功後、システムがCodexのOAuth認証情報ファイルを自動保存
 4. **コールバックポート**：OAuthコールバックポート `1455` が占有されていないことを確認
+5. **画像 Helper モデル**：`gpt-image-2` / `gpt-image-2-fast` は、`image_generation` ツールをサポートする Codex メインモデルを通じて画像を生成します。`configs/config.json` に `"CODEX_IMAGE_HELPER_MODEL": "gpt-5.6-sol"` を設定するとグローバルに指定でき、`configs/provider_pools.json` の各 Codex ノードに同じフィールドを設定すると上書きできます（ノード設定が優先）。アカウントで利用可能かつ `image_generation` 対応のメインモデルを指定してください。`gpt-image-*` は指定できず、空白または文字列以外の値は `gpt-5.6-sol` にフォールバックします。
 
 #### Grok CLI OAuth設定
 1. **認証の生成**：Web UIの「プロバイダープール」または「設定管理」ページで、Grok CLIの「認証生成」ボタンをクリック

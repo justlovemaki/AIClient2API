@@ -530,6 +530,7 @@ curl http://localhost:3000/claude-kiro-oauth/v1/chat/completions \
 2. **浏览器登录**：系统将打开 OpenAI Codex 授权页面，完成 OAuth 登录
 3. **自动保存**：授权成功后，系统会自动保存 Codex 的 OAuth 凭据文件
 4. **回调端口**：确保 OAuth 回调端口 `1455` 未被占用
+5. **图像 Helper 模型**：`gpt-image-2` / `gpt-image-2-fast` 会通过支持 `image_generation` 工具的 Codex 主模型生图。可在 `configs/config.json` 全局设置 `"CODEX_IMAGE_HELPER_MODEL": "gpt-5.6-sol"`，也可在 `configs/provider_pools.json` 的单个 Codex 节点中设置同名字段进行覆盖（节点配置优先）。该值必须是账号可用且支持 `image_generation` 的主模型，不能使用 `gpt-image-*`；留空或非字符串值会回退到 `gpt-5.6-sol`。
 
 #### Grok CLI OAuth 配置
 1. **生成授权**：在 Web UI 的“提供商池”或“配置管理”页面，点击 Grok CLI 的“生成授权”按钮

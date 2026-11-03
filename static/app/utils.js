@@ -251,6 +251,7 @@ function getFieldLabel(key) {
         'ANTIGRAVITY_OAUTH_CREDS_FILE_PATH': t('modal.provider.field.oauthPath'),
         'IFLOW_OAUTH_CREDS_FILE_PATH': t('modal.provider.field.oauthPath'),
         'CODEX_OAUTH_CREDS_FILE_PATH': t('modal.provider.field.oauthPath'),
+        'CODEX_IMAGE_HELPER_MODEL': 'Codex Image Helper Model',
         'GROK_CLI_OAUTH_CREDS_FILE_PATH': t('modal.provider.field.oauthPath'),
         'GROK_COOKIE_TOKEN': t('modal.provider.field.ssoToken'),
         'GROK_CF_CLEARANCE': t('modal.provider.field.cfClearance'),
@@ -508,6 +509,12 @@ function getProviderTypeFields(providerType) {
                 label: `${t('modal.provider.field.codexBaseUrl')} <span class="optional-tag">${t('config.optional')}</span>`,
                 type: 'text',
                 placeholder: 'https://api.openai.com/v1/codex'
+            },
+            {
+                id: 'CODEX_IMAGE_HELPER_MODEL',
+                label: `Codex Image Helper Model <span class="optional-tag">${t('config.optional')}</span>`,
+                type: 'text',
+                placeholder: 'gpt-5.6-sol'
             }
         ],
         'grok-cli-oauth': [

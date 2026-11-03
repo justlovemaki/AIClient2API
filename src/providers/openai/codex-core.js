@@ -16,7 +16,8 @@ import {normalizeCodexInstructions, resolveCodexCacheIdentity} from './codex-req
 const baseModels = getProviderModels(MODEL_PROVIDER.CODEX_API);
 const fastModels = baseModels.map(m => `${m}-fast`);
 const CODEX_MODELS = [...new Set([...baseModels, ...fastModels])];
-const CODEX_VERSION = '0.159.2';
+const CODEX_VERSION = '0.166.0';
+export const CODEX_DEFAULT_MODEL = 'gpt-5.6-sol';
 export const IMAGE_MODELS = new Set(['gpt-image-2']);
 
 function normalizeCodexTerminalError(parsed) {
@@ -277,7 +278,7 @@ export class CodexApiService {
             if (this.config.MODEL_FALLBACK_ENABLED === false) {
                 throw new Error(`[Codex] 模型不存在: ${model}`);
             }
-            const defaultModel = CODEX_MODELS[0] || 'gpt-5.5';
+            const defaultModel = CODEX_MODELS.includes(CODEX_DEFAULT_MODEL) ? CODEX_DEFAULT_MODEL : CODEX_MODELS[0];
             logger.warn(`[Codex] Model '${model}' not found in supported list. Falling back to default: '${defaultModel}'`);
             selectedModel = defaultModel;
         }
@@ -354,7 +355,7 @@ export class CodexApiService {
             if (this.config.MODEL_FALLBACK_ENABLED === false) {
                 throw new Error(`[Codex] 模型不存在: ${model}`);
             }
-            const defaultModel = CODEX_MODELS[0] || 'gpt-5.5';
+            const defaultModel = CODEX_MODELS.includes(CODEX_DEFAULT_MODEL) ? CODEX_DEFAULT_MODEL : CODEX_MODELS[0];
             logger.warn(`[Codex] Model '${model}' not found in supported list. Falling back to default: '${defaultModel}'`);
             selectedModel = defaultModel;
         }
@@ -487,9 +488,17 @@ export class CodexApiService {
         const defaultServiceTier = isFastModel ? 'priority' : 'default';
         const defaultReasoningEffort = isFastModel ? 'xhigh' : 'medium';
 
-        // 图像生成模型：gpt-image-2 通过 image_generation 工具 + gpt-5.5 实现
+        // 图像生成模型通过支持 image_generation 工具的 Codex 主模型实现。
+        // CODEX_IMAGE_HELPER_MODEL 可在全局配置中设置，并由号池节点配置覆盖。
         const isImageModel = IMAGE_MODELS.has(upstreamModel);
-        const effectiveUpstreamModel = isImageModel ? 'gpt-5.5' : upstreamModel;
+        const configuredImageHelperModel = typeof this.config?.CODEX_IMAGE_HELPER_MODEL === 'string'
+            ? this.config.CODEX_IMAGE_HELPER_MODEL.trim()
+            : '';
+        const imageHelperModel = configuredImageHelperModel || 'gpt-5.6-sol';
+        if (isImageModel && /^gpt-image(?:-|$)/i.test(imageHelperModel)) {
+            throw new Error('[Codex] CODEX_IMAGE_HELPER_MODEL must name a mainline model, not a gpt-image-* model.');
+        }
+        const effectiveUpstreamModel = isImageModel ? imageHelperModel : upstreamModel;
 
         const cleanedBody = {...requestBody};
         delete cleanedBody.metadata;
