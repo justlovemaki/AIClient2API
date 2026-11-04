@@ -232,6 +232,8 @@ test('public quickstarts and Compose examples include private-state persistence 
         const content = await fs.readFile(new URL('../../' + name, import.meta.url), 'utf8');
         assert.match(content, /UPGRADING_PLUGIN_TRUST\.md/);
         assert.match(content, /PLUGIN_PAGE_AUTH_MIGRATION\.md/);
+        assert.match(content, /2026\.11\.04 \(v3\.6\.5/);
+        assert.doesNotMatch(content, /待发布|Unreleased|次回リリース/);
         assert.match(content, /docker run [^\r\n]*-v "[^"\r\n]+\/\.private:\/app\/\.private"/);
     }
     for (const name of ['docker-compose.yml', 'docker-compose.build.yml', 'docker-compose.dev.yml']) {
@@ -239,6 +241,8 @@ test('public quickstarts and Compose examples include private-state persistence 
         assert.match(content, /\/\.private:\/app\/\.private/);
     }
     const guide = await fs.readFile(new URL('../../docs/UPGRADING_PLUGIN_TRUST.md', import.meta.url), 'utf8');
+    assert.match(guide, /v3\.6\.5 已发布/);
+    assert.doesNotMatch(guide, /版本发布时/);
     assert.match(guide, /\.private\/plugin-approval\.key/);
     assert.match(guide, /docker cp/);
     assert.match(guide, /enabled:false/);

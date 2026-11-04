@@ -230,7 +230,7 @@
 > <details>
 > <summary>Click to expand detailed version history</summary>
 > 
-> - **Unreleased — breaking security change** - User plugins require explicit administrator approval and a local signing key. Persist `.private/`; the updater now preserves private state. Legacy enabled plugins are not automatically trusted. See the [migration guide (Chinese)](./docs/UPGRADING_PLUGIN_TRUST.md).
+> - **2026.11.04 (v3.6.5 — breaking security change)** - User plugins require explicit administrator approval and a local signing key. Persist `.private/`; the updater now preserves private state. Legacy enabled plugins are not automatically trusted. See the [migration guide (Chinese)](./docs/UPGRADING_PLUGIN_TRUST.md).
 > - **2026.06.03** - Added Grok Build (Grok CLI) support: integrated the `grok-cli-oauth` xAI OAuth / Responses API flow, covering Grok Build text models, multi-protocol conversion, built-in tools (web search, X search, code interpreter, collections/file attachments), and image/video generation models.
 > - **2026.05.04 (v3.0.0)** - **Milestone Update: Deep AI Integration & Self-Discovery Architecture**. Added automated Skill guides and remote `/api/help`, `/api/example` endpoints, enabling AI agents to seamlessly understand and operate 50+ full API endpoints; achieved full unification of CLI and REST API output results with enhanced structured JSON support.
 > - **2026.04.29** - Comprehensive support for OpenAI standard Image Generation (`/v1/images/generations`) and Image Editing (`/v1/images/edits`) interfaces. Supports automatic conversion from OpenAI format to native image generation protocols of various models, fully compatible with provider pool polling and retry mechanisms, significantly improving the stability of multimodal creation.
