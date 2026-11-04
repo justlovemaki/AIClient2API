@@ -83,22 +83,7 @@ export async function handleUIApiRequests(method, pathParam, req, res, currentCo
     
     // Handle UI management API requests (需要token验证)
     if (isUIApiPath(pathParam)) {
-        // 检查token验证
-        const isAuth = await auth.checkAuth(req);
-        if (!isAuth) {
-            res.writeHead(401, {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-            });
-            res.end(JSON.stringify({
-                error: {
-                    message: 'Unauthorized access, please login first',
-                    code: 'UNAUTHORIZED'
-                }
-            }));
-            return true;
-        }
+        if (!await auth.requireManagementAuth(req, res)) return true;
     }
 
     // 文件上传API

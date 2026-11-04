@@ -9,6 +9,7 @@ services:
     volumes:
       # 从项目根目录挂载 configs，使用绝对路径确保正确
       - ../configs:/app/configs
+      - ../.private:/app/.private
       - ../plugins:/app/src/plugins-user
       # 挂载源代码以支持热重载，但保留 node_modules
       - ../src:/app/src:ro

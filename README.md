@@ -215,6 +215,11 @@
 
 `AIClient2API` is an API proxy service that breaks through client limitations, converting free large models originally restricted to client use only (such as Gemini, Antigravity, Codex, Grok, Kiro) into standard OpenAI-compatible interfaces that can be called by any application. Built on Node.js, it supports intelligent conversion between OpenAI, Claude, and Gemini protocols, enabling tools like Cherry-Studio, NextChat, and Cline to freely use advanced models such as Claude Opus and Gemini Pro at scale. The project adopts a modular architecture based on strategy and adapter patterns, with built-in account pool management, intelligent polling, automatic failover, and health check mechanisms, ensuring 99.9% service availability.
 
+> [!WARNING]
+> **Breaking security upgrade: trusted plugins and a local signing key**
+>
+> Existing user plugins require explicit administrator reapproval on the first upgrade. Docker deployments must persist `/app/.private`; pulling an image does not add this mount. Copy and back up an existing key before deleting the old container. Read the [migration guide (Chinese)](./docs/UPGRADING_PLUGIN_TRUST.md) before upgrading. Custom plugin pages using unauthenticated `fetch('/api/...')` must also follow the [page-auth migration guide (Chinese)](./docs/PLUGIN_PAGE_AUTH_MIGRATION.md), or they will receive 401. This is not a zero-action migration.
+
 > [!NOTE]
 > **🎉 Important Milestone**
 >
@@ -225,6 +230,7 @@
 > <details>
 > <summary>Click to expand detailed version history</summary>
 > 
+> - **Unreleased — breaking security change** - User plugins require explicit administrator approval and a local signing key. Persist `.private/`; the updater now preserves private state. Legacy enabled plugins are not automatically trusted. See the [migration guide (Chinese)](./docs/UPGRADING_PLUGIN_TRUST.md).
 > - **2026.06.03** - Added Grok Build (Grok CLI) support: integrated the `grok-cli-oauth` xAI OAuth / Responses API flow, covering Grok Build text models, multi-protocol conversion, built-in tools (web search, X search, code interpreter, collections/file attachments), and image/video generation models.
 > - **2026.05.04 (v3.0.0)** - **Milestone Update: Deep AI Integration & Self-Discovery Architecture**. Added automated Skill guides and remote `/api/help`, `/api/example` endpoints, enabling AI agents to seamlessly understand and operate 50+ full API endpoints; achieved full unification of CLI and REST API output results with enhanced structured JSON support.
 > - **2026.04.29** - Comprehensive support for OpenAI standard Image Generation (`/v1/images/generations`) and Image Editing (`/v1/images/edits`) interfaces. Supports automatic conversion from OpenAI format to native image generation protocols of various models, fully compatible with provider pool polling and retry mechanisms, significantly improving the stability of multimodal creation.
@@ -295,6 +301,8 @@
 
 ## 📑 Quick Navigation
 
+- [⚠️ Security Upgrade Migration (Chinese)](./docs/UPGRADING_PLUGIN_TRUST.md)
+- [🔌 Custom Plugin Page Authentication Migration (Chinese)](./docs/PLUGIN_PAGE_AUTH_MIGRATION.md)
 - [💡 Core Advantages](#-core-advantages)
 - [🚀 Quick Start](#-quick-start)
   - [🐳 Docker Deployment](https://hub.docker.com/r/justlikemaki/aiclient-2-api)
@@ -318,7 +326,7 @@ The most recommended way to use AIClient2API is to start it through an automated
 #### 🐳 Docker Quick Start (Recommended)
 
 ```bash
-docker run -d -p 3000:3000 -p 8086:8086 -p 1455:1455 -p 56121:56121 -p 19876-19880:19876-19880 --restart=always -v "your_path/configs:/app/configs" -v "your_path/plugins:/app/src/plugins-user" --name aiclient2api justlikemaki/aiclient-2-api
+docker run -d -p 3000:3000 -p 8086:8086 -p 1455:1455 -p 56121:56121 -p 19876-19880:19876-19880 --restart=always -v "your_path/configs:/app/configs" -v "your_path/plugins:/app/src/plugins-user" -v "your_path/.private:/app/.private" --name aiclient2api justlikemaki/aiclient-2-api
 ```
 
 **Parameter Description**:
@@ -327,6 +335,7 @@ docker run -d -p 3000:3000 -p 8086:8086 -p 1455:1455 -p 56121:56121 -p 19876-198
 - `--restart=always`: Container auto-restart policy
 - `-v "your_path/configs:/app/configs"`: Mount configuration directory (replace "your_path" with actual path, e.g., `/home/user/aiclient2api`)
 - `-v "your_path/plugins:/app/src/plugins-user"`: Mount user plugins directory
+- `-v "your_path/.private:/app/.private"`: Persist the plugin signing key; migrate an existing container's key before recreating it ([guide](./docs/UPGRADING_PLUGIN_TRUST.md))
 - `--name aiclient2api`: Container name
 
 #### 🐳 Docker Compose Deployment
@@ -335,7 +344,7 @@ You can also use Docker Compose for deployment. First, navigate to the `docker` 
 
 ```bash
 cd docker
-mkdir -p configs
+mkdir -p configs plugins .private
 docker compose up -d
 ```
 

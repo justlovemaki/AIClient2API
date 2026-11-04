@@ -15,6 +15,10 @@ const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 const GITHUB_REPO = 'justlovemaki/AIClient2API';
 
+function normalizeUpdateEntryName(name) {
+    return name.toLowerCase().replace(/[. ]+$/, '');
+}
+
 function buildGitHubApiCandidates(repo) {
     const apiPath = `repos/${repo}/tags`;
     return [
@@ -381,8 +385,15 @@ export async function performUpdate(targetTag = null) {
         return await performTarballUpdate(updateInfo.localVersion, finalTag);
     }
     
+    // Git checkout can overwrite ignored files if a target tag tracks them.
+    // Refuse such releases BEFORE stash/checkout instead of replacing host keys.
+    const { stdout: trackedRootEntries } = await execFileAsync('git', ['ls-tree', '-z', '--name-only', finalTag]);
+    if (trackedRootEntries.split('\0').some(name => normalizeUpdateEntryName(name) === '.private')) {
+        throw new Error('Refusing Git update: target version contains instance-private state (.private)');
+    }
+
     logger.info(`[Update] Starting update to ${finalTag}...`);
-    
+
     // 检查是否有未提交的更改
     try {
         const { stdout: statusOutput } = await execAsync('git status --porcelain');
@@ -512,7 +523,11 @@ async function performTarballUpdate(localVersion, latestTag) {
         
         // 3. 解压 tarball
         logger.info('[Update] Extracting tarball...');
-        await execFileAsync('tar', ['-xzf', tarballPath, '-C', tempDir]);
+        // Relative archive paths also work with GNU tar in Windows Git Bash:
+        // an absolute C:\\... archive argument is otherwise parsed as remote C:.
+        const relativeArchive = path.relative(appDir, tarballPath).split(path.sep).join('/');
+        const relativeTempDir = path.relative(appDir, tempDir).split(path.sep).join('/');
+        await execFileAsync('tar', ['-xzf', relativeArchive, '-C', relativeTempDir], { cwd: appDir });
         
         // 4. 找到解压后的目录（格式通常是 repo-name-tag）
         const extractedItems = await fs.readdir(tempDir);
@@ -553,6 +568,7 @@ async function performTarballUpdate(localVersion, latestTag) {
         // 6. 定义需要保留的目录和文件（不被覆盖）
         const preservePaths = [
             'configs',           // 用户配置目录
+            '.private',          // 本机签名密钥/私有状态：升级包不能提供或替换
             'node_modules',      // 依赖目录
             '.update_temp',      // 临时更新目录
             'logs',              // 日志目录
@@ -566,7 +582,10 @@ async function performTarballUpdate(localVersion, latestTag) {
         
         for (const item of sourceItems) {
             // 跳过需要保留的目录
-            if (preservePaths.includes(item)) {
+            // Protect private state even if an archive accidentally packages it,
+            // including case/trailing-dot aliases on Windows/macOS filesystems.
+            const normalizedItem = normalizeUpdateEntryName(item);
+            if (preservePaths.includes(normalizedItem)) {
                 logger.info(`[Update] Skipping preserved path: ${item}`);
                 continue;
             }

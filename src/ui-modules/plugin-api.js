@@ -5,6 +5,7 @@ import { broadcastEvent } from './event-broadcast.js';
 import { fetchMarketPlugins, installPlugin, installPluginFromBuffer } from '../services/plugin-installer.js';
 import multer from 'multer';
 import path from 'path';
+import { requireManagementAuth, requireAdminReauthentication } from './auth.js';
 
 // 配置插件上传
 const storage = multer.memoryStorage();
@@ -26,7 +27,7 @@ const pluginUpload = multer({
 export async function handleGetPlugins(req, res) {
     try {
         const pluginManager = getPluginManager();
-        const plugins = pluginManager.getPluginList();
+        const plugins = await pluginManager.getPluginList();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ plugins }));
         return true;
@@ -46,6 +47,7 @@ export async function handleGetPlugins(req, res) {
  * 上传并安装插件
  */
 export async function handleUploadPlugin(req, res) {
+    if (!await requireManagementAuth(req, res)) return true;
     return new Promise((resolve) => {
         pluginUpload.single('file')(req, res, async (err) => {
             if (err) {
@@ -114,6 +116,7 @@ export async function handleGetMarketPlugins(req, res) {
  * 安装插件
  */
 export async function handleInstallPlugin(req, res) {
+    if (!await requireManagementAuth(req, res)) return true;
     try {
         const body = await getRequestBody(req);
         const { plugin } = body;
@@ -152,9 +155,10 @@ export async function handleInstallPlugin(req, res) {
  * 切换插件状态
  */
 export async function handleTogglePlugin(req, res, pluginName) {
+    if (!await requireManagementAuth(req, res)) return true;
     try {
-        const body = await getRequestBody(req);
-        const { enabled } = body;
+        const body = await getRequestBody(req, { maxBytes: 10 * 1024 });
+        const { enabled, password, trust, packageHash } = body;
 
         if (typeof enabled !== 'boolean') {
             res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -166,8 +170,9 @@ export async function handleTogglePlugin(req, res, pluginName) {
             return true;
         }
 
+        if (enabled && !await requireAdminReauthentication(req, res, password)) return true;
         const pluginManager = getPluginManager();
-        await pluginManager.setPluginEnabled(pluginName, enabled);
+        await pluginManager.setPluginEnabled(pluginName, enabled, { trust, packageHash });
 
         // 广播更新事件
         broadcastEvent('plugin_update', {
@@ -189,10 +194,12 @@ export async function handleTogglePlugin(req, res, pluginName) {
         return true;
     } catch (error) {
         logger.error('[UI API] Failed to toggle plugin:', error);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
+        const trustError = ['PLUGIN_TRUST_REQUIRED', 'PLUGIN_APPROVAL_REQUIRED', 'PLUGIN_PACKAGE_CHANGED', 'PLUGIN_PACKAGE_INVALID', 'PLUGIN_RESTART_REQUIRED'].includes(error.code);
+        res.writeHead(trustError ? error.status : 500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             error: {
-                message: 'Failed to toggle plugin: ' + error.message
+                code: trustError ? error.code : 'PLUGIN_TOGGLE_FAILED',
+                message: trustError ? error.message : 'Failed to toggle plugin'
             }
         }));
         return true;
@@ -203,6 +210,7 @@ export async function handleTogglePlugin(req, res, pluginName) {
  * 卸载插件
  */
 export async function handleUninstallPlugin(req, res, pluginName) {
+    if (!await requireManagementAuth(req, res)) return true;
     try {
         const pluginManager = getPluginManager();
         await pluginManager.uninstallPlugin(pluginName);

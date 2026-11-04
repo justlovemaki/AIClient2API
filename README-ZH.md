@@ -215,6 +215,11 @@
 
 `AIClient2API` 是一个突破客户端限制的 API 代理服务，将 Gemini、Antigravity、Codex, Grok、Kiro 等原本仅限客户端内使用的免费大模型，转换为可供任何应用调用的标准 OpenAI 兼容接口。基于 Node.js 构建，支持 OpenAI、Claude、Gemini 三大协议的智能互转，让 Cherry-Studio、NextChat、Cline 等工具能够免费大量使用 Claude Opus、Gemini Pro 等高级模型。项目采用策略模式和适配器模式的模块化架构，内置账号池管理、智能轮询、自动故障转移和健康检查机制，确保 99.9% 的服务可用性。
 
+> [!WARNING]
+> **重大安全升级：可信插件与签名密钥（破坏性变更）**
+>
+> 首次升级后，旧用户插件需要管理员重新审查并批准；Docker 用户必须持久化 `/app/.private`，仅拉取新镜像不会自动补挂载。已有密钥应在删除旧容器前迁出并备份。请先阅读 [升级迁移指南](./docs/UPGRADING_PLUGIN_TRUST.md)；自定义插件页面若直接使用未认证 `fetch('/api/...')`，还需按 [页面鉴权迁移指南](./docs/PLUGIN_PAGE_AUTH_MIGRATION.md) 修改，否则会返回 401。不要把本次变更当作无感升级。
+
 > [!NOTE]
 > **🎉 重要里程碑**
 >
@@ -225,6 +230,7 @@
 > <details>
 > <summary>点击展开查看详细版本历史</summary>
 > 
+> - **待发布（破坏性安全变更）** - 用户插件改为管理员明确批准，新增本机签名密钥及 `.private/` 持久化要求；修复升级器私有状态保留。历史插件不会自动获得信任，详见 [升级指南](./docs/UPGRADING_PLUGIN_TRUST.md)。
 > - **2026.06.03** - 新增 Grok Build（Grok CLI）支持：接入 `grok-cli-oauth` 的 xAI OAuth / Responses API 调用链，支持 Grok Build 文本模型、多协议转换、内置工具（网页搜索、X 搜索、代码解释器、集合/附件搜索）以及图片/视频生成模型。
 > - **2026.05.04 (v3.0.0)** - **里程碑更新：AI 深度集成与自发现架构**。新增自动化 Skill 指南与远程 `/api/help`、`/api/example` 接口，支持 AI 代理无缝理解并操作 50+ 个全量 API 端点；实现了 CLI 与 REST API 输出结果的完全统一，增强了结构化 JSON 支持。
 > - **2026.04.29** - 全面支持 OpenAI 标准的图片生成 (`/v1/images/generations`) 与编辑 (`/v1/images/edits`) 接口。支持自动将 OpenAI 格式请求转换为各模型对应的原生生图协议，并适配号池轮询与自动重试机制，大幅提升多模态创作的稳定性。
@@ -294,6 +300,8 @@
 
 ## 📑 快速导航
 
+- [⚠️ 重大安全升级迁移](./docs/UPGRADING_PLUGIN_TRUST.md)
+- [🔌 自定义插件页面鉴权迁移](./docs/PLUGIN_PAGE_AUTH_MIGRATION.md)
 - [💡 核心优势](#-核心优势)
 - [🚀 快速启动](#-快速启动)
   - [🐳 Docker 部署](https://hub.docker.com/r/justlikemaki/aiclient-2-api)
@@ -317,7 +325,7 @@
 #### 🐳 Docker 快捷启动 (推荐)
 
 ```bash
-docker run -d -p 3000:3000 -p 8086:8086 -p 1455:1455 -p 56121:56121 -p 19876-19880:19876-19880 --restart=always -v "指定路径/configs:/app/configs" -v "指定路径/plugins:/app/src/plugins-user" --name aiclient2api justlikemaki/aiclient-2-api
+docker run -d -p 3000:3000 -p 8086:8086 -p 1455:1455 -p 56121:56121 -p 19876-19880:19876-19880 --restart=always -v "指定路径/configs:/app/configs" -v "指定路径/plugins:/app/src/plugins-user" -v "指定路径/.private:/app/.private" --name aiclient2api justlikemaki/aiclient-2-api
 ```
 
 **参数说明**：
@@ -326,6 +334,7 @@ docker run -d -p 3000:3000 -p 8086:8086 -p 1455:1455 -p 56121:56121 -p 19876-198
 - `--restart=always`：容器自动重启策略
 - `-v "指定路径/configs:/app/configs"`：挂载配置目录（请将"指定路径"替换为实际路径，如 `/home/user/aiclient2api`）
 - `-v "指定路径/plugins:/app/src/plugins-user"`：挂载用户插件目录
+- `-v "指定路径/.private:/app/.private"`：持久化本机插件签名密钥；已有容器重建前请按 [升级指南](./docs/UPGRADING_PLUGIN_TRUST.md) 迁出原密钥
 - `--name aiclient2api`：容器名称
 
 #### 🐳 Docker Compose 部署
@@ -334,7 +343,7 @@ docker run -d -p 3000:3000 -p 8086:8086 -p 1455:1455 -p 56121:56121 -p 19876-198
 
 ```bash
 cd docker
-mkdir -p configs
+mkdir -p configs plugins .private
 docker compose up -d
 ```
 

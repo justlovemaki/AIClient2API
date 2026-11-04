@@ -12,7 +12,7 @@ import {
     normalizePluginArchiveEntryName,
     shouldScanPluginFile,
     validatePluginId,
-    validatePluginTextContent
+    warnAboutPluginTextContent
 } from '../core/plugin-security.js';
 
 const DEFAULT_MARKET_URL = 'https://source.hex2077.dev/files/market.json';
@@ -20,6 +20,8 @@ const LOCAL_MARKET_FILE = path.join(process.cwd(), 'configs', 'market.json');
 const PLUGINS_DIR = path.join(process.cwd(), 'src', 'plugins-user');
 const MAX_PLUGIN_ZIP_BYTES = 10 * 1024 * 1024;
 const MAX_DOWNLOAD_REDIRECTS = 5;
+const MAX_PLUGIN_EXTRACTED_BYTES = 20 * 1024 * 1024;
+const MAX_PLUGIN_FILES = 1000;
 
 function isPrivateIPv4(ip) {
     const parts = ip.split('.').map(Number);
@@ -137,14 +139,22 @@ export function validatePluginArchiveBuffer(buffer, label = 'plugin archive') {
     validatePluginId(label, 'plugin archive id');
     const zip = new AdmZip(buffer);
     const zipEntries = zip.getEntries();
+    if (zipEntries.length > MAX_PLUGIN_FILES) throw new Error('Plugin archive contains too many entries');
+    let extractedBytes = 0;
+    const paths = new Set();
 
     for (const entry of zipEntries) {
         if (entry.isDirectory) continue;
         const relativePath = normalizePluginArchiveEntryName(entry.entryName, label);
+        const key = relativePath.toLowerCase();
+        if (paths.has(key)) throw new Error('Plugin archive contains duplicate paths');
+        paths.add(key);
+        extractedBytes += entry.header.size;
+        if (extractedBytes > MAX_PLUGIN_EXTRACTED_BYTES) throw new Error('Plugin archive expands beyond size limit');
         if (!shouldScanPluginFile(relativePath)) continue;
 
         const content = entry.getData().toString('utf8');
-        validatePluginTextContent(content, `${label}/${relativePath}`);
+        warnAboutPluginTextContent(content, `${label}/${relativePath}`);
     }
 }
 
@@ -193,37 +203,45 @@ export async function fetchMarketPlugins(url = null) {
 async function _executeInstallFromBuffer(id, zipBuffer) {
     validatePluginId(id);
     const pluginPath = path.join(PLUGINS_DIR, id);
+    // No replacement of host-shipped code or previously installed packages.
+    // In particular, never follow a pre-existing destination symlink.
+    if (existsSync(path.join(process.cwd(), 'src', 'plugins', id))) {
+        throw new Error('Cannot replace a built-in plugin');
+    }
+    await fs.mkdir(PLUGINS_DIR, { recursive: true });
+    if ((await fs.lstat(PLUGINS_DIR)).isSymbolicLink()) throw new Error('Plugin directory must not be a symbolic link');
+    try {
+        await fs.lstat(pluginPath);
+        throw new Error('Plugin already exists; uninstall it before installing another package');
+    } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+    }
     validatePluginArchiveBuffer(zipBuffer, id);
     const zip = new AdmZip(zipBuffer);
     const zipEntries = zip.getEntries();
 
-    // 1. 创建插件目录
-    await fs.mkdir(pluginPath, { recursive: true });
-
-    // 2. 遍历并分类解压
-    for (const entry of zipEntries) {
-        if (entry.isDirectory) continue;
-
-        const relativePath = normalizePluginArchiveEntryName(entry.entryName, id);
-        const targetPath = path.resolve(pluginPath, relativePath);
-        
-        // 路径越界拦截校验
-        assertPathInside(pluginPath, targetPath, `[Security Hardening] 检测到 Zip Slip 路径穿越拦截: ${entry.entryName}`);
-        
-        await fs.mkdir(path.dirname(targetPath), { recursive: true });
-        await fs.writeFile(targetPath, entry.getData());
+    const stagingPath = await fs.mkdtemp(path.join(PLUGINS_DIR, '.install-'));
+    try {
+        for (const entry of zipEntries) {
+            if (entry.isDirectory) continue;
+            const relativePath = normalizePluginArchiveEntryName(entry.entryName, id);
+            const targetPath = path.resolve(stagingPath, relativePath);
+            assertPathInside(stagingPath, targetPath);
+            await fs.mkdir(path.dirname(targetPath), { recursive: true });
+            await fs.writeFile(targetPath, entry.getData(), { flag: 'wx' });
+        }
+        if (!existsSync(path.join(stagingPath, 'index.js'))) {
+            throw new Error('插件包内未找到 index.js 入口文件');
+        }
+        // Atomic publication of a complete, disabled package; never import it here.
+        await fs.rename(stagingPath, pluginPath);
+        const pluginManager = getPluginManager();
+        await pluginManager.setPluginEnabled(id, false);
+        pluginManager.registerPlaceholder(id, '', pluginPath);
+        return true;
+    } finally {
+        await fs.rm(stagingPath, { recursive: true, force: true });
     }
-
-    // 3. 基础校验
-    if (!existsSync(path.join(pluginPath, 'index.js'))) {
-        throw new Error('插件包内未找到 index.js 入口文件');
-    }
-
-    // 4. 默认禁用新安装插件。不要在安装阶段导入或初始化未审查的插件代码。
-    const pluginManager = getPluginManager();
-    await pluginManager.setPluginEnabled(id, false);
-    pluginManager.registerPlaceholder(id, '', pluginPath);
-    return true;
 }
 
 /**

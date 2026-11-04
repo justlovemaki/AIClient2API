@@ -215,6 +215,11 @@
 
 `AIClient2API` はクライアント制限を突破するAPIプロキシサービスで、Gemini、Antigravity、Codex, Grok、Kiroなど、元々クライアント内でのみ使用可能な無料大規模モデルを、あらゆるアプリケーションから呼び出せる標準OpenAI互換インターフェースに変換します。Node.jsをベースに構築され、OpenAI、Claude、Geminiの3大プロトコル間のインテリジェント変換をサポートし、Cherry-Studio、NextChat、Clineなどのツールで、Claude Opus、Gemini Proなどの高度なモデルを大規模に無料で使用できるようにします。プロジェクトはストラテジーパターンとアダプターパターンに基づくモジュラーアーキテクチャを採用し、アカウントプール管理、インテリジェントポーリング、自動フェイルオーバー、ヘルスチェック機構を内蔵し、99.9%のサービス可用性を保証します。
 
+> [!WARNING]
+> **重大なセキュリティ更新：信頼済みプラグインと署名鍵（破壊的変更）**
+>
+> 初回アップグレード後、既存のユーザープラグインには管理者の再承認が必要です。Docker では `/app/.private` を永続化してください。イメージを更新するだけではマウントは追加されません。旧コンテナを削除する前に既存の鍵を移行・バックアップし、[移行ガイド（中国語）](./docs/UPGRADING_PLUGIN_TRUST.md)を確認してください。未認証の `fetch('/api/...')` を使用するカスタムプラグインページは、[ページ認証移行ガイド（中国語）](./docs/PLUGIN_PAGE_AUTH_MIGRATION.md)に従って修正しないと 401 になります。
+
 > [!NOTE]
 > **🎉 重要なマイルストーン**
 >
@@ -225,6 +230,7 @@
 > <details>
 > <summary>クリックして詳細なバージョン履歴を展開</summary>
 > 
+> - **次回リリース（破壊的なセキュリティ変更）** - ユーザープラグインの明示的な管理者承認と本機署名鍵を導入。`.private/` の永続化が必要です。更新処理は私有状態を保持し、旧プラグインを自動的には信頼しません。[移行ガイド（中国語）](./docs/UPGRADING_PLUGIN_TRUST.md)を参照。
 > - **2026.06.03** - Grok Build（Grok CLI）サポートを追加：`grok-cli-oauth` の xAI OAuth / Responses API 呼び出しフローに対応し、Grok Build テキストモデル、マルチプロトコル変換、組み込みツール（Web検索、X検索、コードインタープリター、コレクション/添付ファイル検索）、画像/動画生成モデルをサポート。
 > - **2026.05.04 (v3.0.0)** - **マイルストーンアップデート：高度な AI 統合と自己発見アーキテクチャ**。自動化された Skill ガイドとリモート `/api/help`、`/api/example` エンドポイントを追加し、AI 代理が 50 以上の全 API エンドポイントをシームレスに理解・操作できるようになりました。CLI と REST API の出力結果を完全に統一し、構造化 JSON サポートを強化しました。
 > - **2026.04.29** - OpenAI 標準の画像生成 (`/v1/images/generations`) および画像編集 (`/v1/images/edits`) インターフェースを完全にサポート。OpenAI 形式のリクエストを各モデルのネイティブ画像生成プロトコルに自動変換し、プロバイダープールのポーリングや自动リトライメカニズムに完全対応。マルチモーダル制作の安定性を大幅に向上。
@@ -295,6 +301,8 @@
 
 ## 📑 クイックナビゲーション
 
+- [⚠️ セキュリティ更新の移行（中国語）](./docs/UPGRADING_PLUGIN_TRUST.md)
+- [🔌 カスタムプラグインページ認証の移行（中国語）](./docs/PLUGIN_PAGE_AUTH_MIGRATION.md)
 - [💡 コアアドバンテージ](#-コアアドバンテージ)
 - [🚀 クイックスタート](#-クイックスタート)
   - [🐳 Docker デプロイ](https://hub.docker.com/r/justlikemaki/aiclient-2-api)
@@ -318,7 +326,7 @@ AIClient2APIを使い始める最も推奨される方法は、自動起動ス�
 #### 🐳 Docker クイックスタート (推奨)
 
 ```bash
-docker run -d -p 3000:3000 -p 8086:8086 -p 1455:1455 -p 56121:56121 -p 19876-19880:19876-19880 --restart=always -v "指定パス/configs:/app/configs" -v "指定パス/plugins:/app/src/plugins-user" --name aiclient2api justlikemaki/aiclient-2-api
+docker run -d -p 3000:3000 -p 8086:8086 -p 1455:1455 -p 56121:56121 -p 19876-19880:19876-19880 --restart=always -v "指定パス/configs:/app/configs" -v "指定パス/plugins:/app/src/plugins-user" -v "指定パス/.private:/app/.private" --name aiclient2api justlikemaki/aiclient-2-api
 ```
 
 **パラメータ説明**：
@@ -327,6 +335,7 @@ docker run -d -p 3000:3000 -p 8086:8086 -p 1455:1455 -p 56121:56121 -p 19876-198
 - `--restart=always`：コンテナ自動再起動ポリシー
 - `-v "指定パス/configs:/app/configs"`：設定ディレクトリをマウント（「指定パス」を実際のパスに置き換えてください、例：`/home/user/aiclient2api`）
 - `-v "指定パス/plugins:/app/src/plugins-user"`：ユーザープラグインディレクトリをマウント
+- `-v "指定パス/.private:/app/.private"`：署名鍵を永続化。既存コンテナを再作成する前に鍵を移行してください（[ガイド](./docs/UPGRADING_PLUGIN_TRUST.md)）
 - `--name aiclient2api`：コンテナ名
 
 #### 🐳 Docker Compose デプロイ
@@ -335,7 +344,7 @@ Docker Compose を使用してデプロイすることもできます。まず�
 
 ```bash
 cd docker
-mkdir -p configs
+mkdir -p configs plugins .private
 docker compose up -d
 ```
 

@@ -180,6 +180,7 @@ const apiPotluckPlugin = {
         {
             method: '*',
             path: '/api/potluckuser',
+            public: true, // This user-only handler validates the user's maki_ API key itself.
             handler: handlePotluckUserApiRoutes
         },
         {

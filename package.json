@@ -38,6 +38,8 @@
     "start:standalone": "node src/services/api-server.js",
     "start:dev": "node src/core/master.js --dev",
     "test": "jest",
+    "test:security": "node --test tests/security/*.test.mjs",
+    "test:ui": "node --test tests/ui/*.test.mjs",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:verbose": "jest --verbose",

@@ -9,6 +9,8 @@ const TEXT_FILE_EXTENSIONS = new Set([
     '.js', '.mjs', '.cjs', '.json', '.html', '.css', '.txt', '.md', '.yml', '.yaml', '.env'
 ]);
 
+// Advisory upload signals only: legitimate trusted plugins may use these APIs.
+// Neither matching nor passing this list grants or revokes administrator trust.
 export const DANGEROUS_PLUGIN_PATTERNS = [
     { pattern: /\b(?:node:)?child_process\b/i, reason: 'child_process system command API' },
     { pattern: /\b(?:spawn|exec|execFile|fork)\s*\(/i, reason: 'process execution call' },
@@ -28,8 +30,18 @@ const RESERVED_ROUTE_PREFIXES = [
     '/api/update',
     '/api/oauth',
     '/api/access',
-    '/api/upload'
+    '/api/upload',
+    '/api/health',
+    '/api/help',
+    '/api/example',
+    '/api/grok/assets'
 ];
+
+// Reviewed compatibility alias: only the Potluck USER endpoint authenticates
+// with its own API key. Never exempt the adjacent /api/potluck admin namespace.
+const BUILTIN_PUBLIC_ROUTE_ALIASES = new Map([
+    ['api-potluck', new Set(['/api/potluckuser'])]
+]);
 
 export function auditSecurityEvent(event) {
     const payload = {
@@ -40,7 +52,8 @@ export function auditSecurityEvent(event) {
 }
 
 export function validatePluginId(pluginId, label = 'pluginId') {
-    if (typeof pluginId !== 'string' || !PLUGIN_ID_PATTERN.test(pluginId)) {
+    if (typeof pluginId !== 'string' || !PLUGIN_ID_PATTERN.test(pluginId) ||
+        Object.hasOwn(Object.prototype, pluginId) || pluginId === 'prototype') {
         throw new Error(`[Security Hardening] Invalid ${label}: only letters, numbers, "_" and "-" are allowed, length 1-64`);
     }
     return pluginId;
@@ -101,12 +114,10 @@ export function shouldScanPluginFile(fileName) {
     return TEXT_FILE_EXTENSIONS.has(ext) || ext === '';
 }
 
-export function validatePluginTextContent(content, label = 'plugin file') {
-    for (const { pattern, reason } of DANGEROUS_PLUGIN_PATTERNS) {
-        if (pattern.test(content)) {
-            throw new Error(`[Security Hardening] 插件安全校验失败: ${label} 命中危险模式：${reason}`);
-        }
-    }
+export function warnAboutPluginTextContent(content, label = 'plugin file') {
+    const signals = DANGEROUS_PLUGIN_PATTERNS.filter(({ pattern }) => pattern.test(content)).map(({ reason }) => reason);
+    if (signals.length) auditSecurityEvent({ type: 'plugin_source_advisory', file: label, signals });
+    return signals;
 }
 
 export async function scanPluginDirectory(pluginDir, label = pluginDir) {
@@ -133,7 +144,7 @@ export async function scanPluginDirectory(pluginDir, label = pluginDir) {
             if (!entry.isFile() || !shouldScanPluginFile(entry.name)) continue;
 
             const content = await fs.readFile(entryPath, 'utf8');
-            validatePluginTextContent(content, `${label}/${path.relative(resolvedPluginDir, entryPath)}`);
+            warnAboutPluginTextContent(content, `${label}/${path.relative(resolvedPluginDir, entryPath)}`);
         }
     }
 
@@ -155,9 +166,15 @@ function validateStaticPath(staticPath, pluginName) {
     }
 }
 
-function validateRoute(route, pluginName) {
+function validateRoute(route, pluginName, isUserPlugin) {
     if (!route || typeof route !== 'object') {
         throw new Error(`[Security Hardening] Plugin "${pluginName}" has invalid route`);
+    }
+    if (typeof route.method !== 'string' || !/^(?:\*|GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/i.test(route.method)) {
+        throw new Error(`[Security Hardening] Plugin "${pluginName}" route has invalid method`);
+    }
+    if (route.public !== undefined && typeof route.public !== 'boolean') {
+        throw new Error(`[Security Hardening] Plugin "${pluginName}" route.public must be a boolean`);
     }
     if (typeof route.handler !== 'function') {
         throw new Error(`[Security Hardening] Plugin "${pluginName}" route handler must be a function`);
@@ -165,8 +182,13 @@ function validateRoute(route, pluginName) {
     if (typeof route.path !== 'string') {
         throw new Error(`[Security Hardening] Plugin "${pluginName}" route path must be a string`);
     }
-    if (!route.path.startsWith('/api/') || route.path === '/api') {
+    if (!route.path.startsWith('/api/') || !/^\/api\/[A-Za-z0-9_/-]+$/.test(route.path) ||
+        route.path.slice(1).split('/').some(segment => !segment) || route.path.endsWith('/')) {
         throw new Error(`[Security Hardening] Plugin "${pluginName}" route must stay under a specific /api/* path`);
+    }
+    const reviewedAlias = !isUserPlugin && BUILTIN_PUBLIC_ROUTE_ALIASES.get(pluginName)?.has(route.path);
+    if (route.public === true && !reviewedAlias && route.path !== `/api/${pluginName}` && !route.path.startsWith(`/api/${pluginName}/`)) {
+        throw new Error(`[Security Hardening] Public routes must use the plugin's own /api/${pluginName} namespace`);
     }
     if (RESERVED_ROUTE_PREFIXES.some(prefix => route.path === prefix || route.path.startsWith(prefix + '/'))) {
         throw new Error(`[Security Hardening] Plugin "${pluginName}" route conflicts with reserved API path: ${route.path}`);
@@ -194,7 +216,7 @@ export function validatePluginExport(plugin, directoryName, isUserPlugin = false
             throw new Error(`[Security Hardening] Plugin "${plugin.name}" routes must be an array`);
         }
         for (const route of plugin.routes) {
-            validateRoute(route, plugin.name);
+            validateRoute(route, plugin.name, isUserPlugin);
         }
     }
 }

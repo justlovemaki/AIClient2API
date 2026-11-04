@@ -13,6 +13,7 @@ services:
       - "19876-19880:19876-19880"
     volumes:
       - ./configs:/app/configs
+      - ./.private:/app/.private
       - ./plugins:/app/src/plugins-user
     environment:
       - ARGS=

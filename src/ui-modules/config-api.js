@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'fs';
+import { existsSync } from 'fs';
 import logger from '../utils/logger.js';
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -10,7 +10,8 @@ import { getRequestBody } from '../utils/common.js';
 import { broadcastEvent } from '../ui-modules/event-broadcast.js';
 import { HEALTH_CHECK, PASSWORD, NETWORK, RETRY } from '../utils/constants.js';
 import { withFileLock, atomicWriteFile } from '../utils/file-lock.js';
-import { validateCredentials } from './auth.js';
+import { validateCredentials, requireManagementAuth, requireAdminReauthentication } from './auth.js';
+import { resolveSystemPromptPath, resolveProviderPoolsPath } from './config-file-policy.js';
 
 function parseBooleanConfig(value) {
     if (typeof value === 'boolean') return value;
@@ -63,7 +64,8 @@ export async function handleGetConfig(req, res, currentConfig) {
 
     if (currentConfig.SYSTEM_PROMPT_FILE_PATH && existsSync(currentConfig.SYSTEM_PROMPT_FILE_PATH)) {
         try {
-            systemPrompt = readFileSync(currentConfig.SYSTEM_PROMPT_FILE_PATH, 'utf-8');
+            const promptPath = await resolveSystemPromptPath(currentConfig.SYSTEM_PROMPT_FILE_PATH);
+            systemPrompt = await fs.readFile(promptPath, 'utf-8');
         } catch (e) {
             logger.warn('[UI API] Failed to read system prompt file:', e.message);
         }
@@ -142,6 +144,27 @@ export async function handleUpdateConfig(req, res, currentConfig) {
 async function _handleUpdateConfig(req, res, currentConfig, body) {
     try {
         const newConfig = body;
+        if (!newConfig || typeof newConfig !== 'object' || Array.isArray(newConfig)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: { message: 'Configuration must be an object' } }));
+            return true;
+        }
+        // Validate BEFORE changing any config/timers or touching files. Also check
+        // an inherited legacy path when the request supplies only prompt content.
+        let promptPath;
+        if (newConfig.SYSTEM_PROMPT_FILE_PATH !== undefined || newConfig.systemPrompt !== undefined) {
+            promptPath = await resolveSystemPromptPath(newConfig.SYSTEM_PROMPT_FILE_PATH ?? currentConfig.SYSTEM_PROMPT_FILE_PATH ?? 'configs/input_system_prompt.txt');
+        }
+        if (newConfig.systemPrompt !== undefined && typeof newConfig.systemPrompt !== 'string') {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: { message: 'System prompt must be a string' } }));
+            return true;
+        }
+
+        let providerPoolsPath;
+        if (newConfig.PROVIDER_POOLS_FILE_PATH !== undefined && newConfig.PROVIDER_POOLS_FILE_PATH !== null && newConfig.PROVIDER_POOLS_FILE_PATH !== '') {
+            providerPoolsPath = await resolveProviderPoolsPath(newConfig.PROVIDER_POOLS_FILE_PATH);
+        }
 
         // Update config values in memory（含类型校验）
         if (newConfig.REQUIRED_API_KEY !== undefined) {
@@ -161,26 +184,7 @@ async function _handleUpdateConfig(req, res, currentConfig, body) {
         }
         if (newConfig.MODEL_PROVIDER !== undefined) currentConfig.MODEL_PROVIDER = newConfig.MODEL_PROVIDER;
         if (newConfig.SYSTEM_PROMPT_FILE_PATH !== undefined) {
-            const p = String(newConfig.SYSTEM_PROMPT_FILE_PATH);
-            // 防止路径遍历：解析后的绝对路径必须在工作目录内
-            const resolved = path.resolve(process.cwd(), p);
-            const cwd = process.cwd();
-
-            // 使用 path.relative 和 path.isAbsolute 进行更严格的校验
-            const relativePath = path.relative(cwd, resolved);
-            const isInsideCwd = !path.isAbsolute(relativePath) && !relativePath.startsWith('..') && relativePath !== '..';
-
-            // Windows 大小写不敏感兼容：仅在 Windows 平台统一转换为小写比较
-            const isWindows = process.platform === 'win32';
-            const normalizedResolved = (isWindows ? resolved.toLowerCase() : resolved).replace(/\\/g, '/');
-            const normalizedCwd = (isWindows ? cwd.toLowerCase() : cwd).replace(/\\/g, '/');
-            const startsWithCwd = normalizedResolved.startsWith(normalizedCwd + '/') || normalizedResolved === normalizedCwd;
-
-            if (isInsideCwd && startsWithCwd) {
-                currentConfig.SYSTEM_PROMPT_FILE_PATH = p;
-            } else {
-                logger.warn(`[UI API] Rejected SYSTEM_PROMPT_FILE_PATH traversal attempt: ${p}`);
-            }
+            currentConfig.SYSTEM_PROMPT_FILE_PATH = path.relative(process.cwd(), promptPath);
         }
         if (newConfig.SYSTEM_PROMPT_MODE !== undefined) currentConfig.SYSTEM_PROMPT_MODE = newConfig.SYSTEM_PROMPT_MODE;
         if (newConfig.SYSTEM_PROMPT_REPLACEMENTS !== undefined) {
@@ -226,7 +230,7 @@ async function _handleUpdateConfig(req, res, currentConfig, body) {
                     .filter(Boolean);
             }
         }
-        if (newConfig.PROVIDER_POOLS_FILE_PATH !== undefined) currentConfig.PROVIDER_POOLS_FILE_PATH = newConfig.PROVIDER_POOLS_FILE_PATH;
+        if (newConfig.PROVIDER_POOLS_FILE_PATH !== undefined) currentConfig.PROVIDER_POOLS_FILE_PATH = providerPoolsPath ? path.relative(process.cwd(), providerPoolsPath) : null;
         if (newConfig.CODEX_IMAGE_HELPER_MODEL !== undefined && typeof newConfig.CODEX_IMAGE_HELPER_MODEL === 'string') {
             currentConfig.CODEX_IMAGE_HELPER_MODEL = newConfig.CODEX_IMAGE_HELPER_MODEL;
         }
@@ -322,8 +326,10 @@ async function _handleUpdateConfig(req, res, currentConfig, body) {
 
         // Handle system prompt update
         if (newConfig.systemPrompt !== undefined) {
-            const promptPath = currentConfig.SYSTEM_PROMPT_FILE_PATH || 'configs/input_system_prompt.txt';
             try {
+                // Recheck links just before writing; do not silently report success on failure.
+                await resolveSystemPromptPath(promptPath);
+                await fs.mkdir(path.dirname(promptPath), { recursive: true });
                 const relativePath = path.relative(process.cwd(), promptPath);
                 await atomicWriteFile(promptPath, newConfig.systemPrompt, 'utf-8');
 
@@ -338,6 +344,7 @@ async function _handleUpdateConfig(req, res, currentConfig, body) {
                 logger.info('[UI API] System prompt updated');
             } catch (e) {
                 logger.warn('[UI API] Failed to write system prompt:', e.message);
+                throw e;
             }
         }
 
@@ -425,8 +432,8 @@ async function _handleUpdateConfig(req, res, currentConfig, body) {
         }));
         return true;
     } catch (error) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: { message: error.message } }));
+        res.writeHead(error.status === 403 ? 403 : 500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { code: error.code, message: error.message } }));
         return true;
     }
 }
@@ -474,11 +481,12 @@ export async function handleReloadConfig(req, res, providerPoolManager) {
  * 更新管理员密码
  */
 export async function handleUpdateAdminPassword(req, res) {
+    if (!await requireManagementAuth(req, res)) return true;
     try {
-        const body = await getRequestBody(req);
-        const { password } = body;
+        const body = await getRequestBody(req, { maxBytes: 10 * 1024 });
+        const { password, currentPassword } = body;
 
-        if (!password || password.trim() === '') {
+        if (typeof password !== 'string' || password.trim() === '') {
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
                 error: {
@@ -499,6 +507,8 @@ export async function handleUpdateAdminPassword(req, res) {
             }));
             return true;
         }
+
+        if (!await requireAdminReauthentication(req, res, currentPassword)) return true;
 
         // 使用 PBKDF2 哈希存储密码，避免明文写入文件
         const salt = crypto.randomBytes(16).toString('hex');

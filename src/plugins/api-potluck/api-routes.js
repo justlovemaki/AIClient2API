@@ -23,6 +23,7 @@ import {
 } from './key-manager.js';
 import { getRequestBody } from '../../utils/common.js';
 import logger from '../../utils/logger.js';
+import { checkAuth as checkAdminAuth } from '../../ui-modules/auth.js';
 
 /**
  * 发送 JSON 响应
@@ -30,50 +31,6 @@ import logger from '../../utils/logger.js';
 function sendJson(res, statusCode, data) {
     res.writeHead(statusCode, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(data));
-}
-
-/**
- * 验证管理员 Token
- * @param {http.IncomingMessage} req
- * @returns {Promise<boolean>}
- */
-async function checkAdminAuth(req) {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return false;
-    }
-    
-    // 动态导入 ui-manager 中的 token 验证逻辑
-    try {
-        const { existsSync, readFileSync } = await import('fs');
-        const { promises: fs } = await import('fs');
-        const path = await import('path');
-        
-        const TOKEN_STORE_FILE = path.join(process.cwd(), 'configs', 'token-store.json');
-        
-        if (!existsSync(TOKEN_STORE_FILE)) {
-            return false;
-        }
-        
-        const content = readFileSync(TOKEN_STORE_FILE, 'utf8');
-        const tokenStore = JSON.parse(content);
-        const token = authHeader.substring(7);
-        const tokenInfo = tokenStore.tokens[token];
-        
-        if (!tokenInfo) {
-            return false;
-        }
-        
-        // 检查是否过期
-        if (Date.now() > tokenInfo.expiryTime) {
-            return false;
-        }
-        
-        return true;
-    } catch (error) {
-        logger.error('[API Potluck] Auth check error:', error.message);
-        return false;
-    }
 }
 
 /**

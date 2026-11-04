@@ -8,18 +8,28 @@
  * 4. 插件配置管理
  */
 
-import { atomicWriteFile } from '../utils/file-lock.js';
+import { atomicWriteFile, withFileLock } from '../utils/file-lock.js';
 import { promises as fs } from 'fs';
 import logger from '../utils/logger.js';
 import { existsSync } from 'fs';
 import path from 'path';
+import { pathToFileURL } from 'url';
+import { requireManagementAuth } from '../ui-modules/auth.js';
 import {
     auditSecurityEvent,
     isInsidePath,
-    scanPluginDirectory,
     validatePluginExport,
     validatePluginId
 } from './plugin-security.js';
+import {
+    getPluginPackageHash,
+    createPluginApproval,
+    isValidPluginApproval,
+    pluginTrustError,
+    verifyPluginApproval,
+    verifyPluginApprovalSignature,
+    PLUGIN_TRUST_MODE
+} from './plugin-trust.js';
 
 // 插件配置文件路径
 const PLUGINS_CONFIG_FILE = path.join(process.cwd(), 'configs', 'plugins.json');
@@ -32,6 +42,20 @@ const USER_PLUGINS_DIR = path.join(process.cwd(), 'src', 'plugins-user');
 const DEFAULT_DISABLED_PLUGINS = ['api-potluck', 'ai-monitor', 'model-usage-stats', 'ip-node-proxy'];
 const PLUGIN_OPERATION_TIMEOUT_MS = 10000;
 const PLUGIN_MAX_ERROR_COUNT = 3;
+
+function isUserPlugin(plugin) {
+    return !!(plugin?._baseDir && isInsidePath(USER_PLUGINS_DIR, plugin._baseDir));
+}
+
+function routeMatches(route, method, requestPath) {
+    return (route.method === '*' || route.method.toUpperCase() === method) &&
+        (requestPath === route.path || requestPath.startsWith(route.path + '/'));
+}
+
+function isPublicPluginRoute(plugin, route) {
+    return route.public === true && !!plugin._baseDir &&
+        isInsidePath(BUILTIN_PLUGINS_DIR, plugin._baseDir);
+}
 
 /**
  * 插件类型常量
@@ -55,7 +79,7 @@ export const PLUGIN_TYPE = {
  * @property {Function} [destroy] - 销毁钩子 () => Promise<void>
  * @property {Function} [middleware] - 请求中间件 (req, res, requestUrl, config) => Promise<{handled: boolean, data?: Object}>
  * @property {Function} [authenticate] - 认证方法（仅 type='auth' 时有效）(req, res, requestUrl, config) => Promise<{handled: boolean, authorized: boolean|null, error?: Object, data?: Object}>
- * @property {Array<{method: string, path: string|RegExp, handler: Function}>} [routes] - 路由定义
+ * @property {Array<{method: string, path: string, public?: boolean, handler: Function}>} [routes] - 路由默认私有；仅可信内置插件可显式公开
  * @property {string[]} [staticPaths] - 静态文件路径（相对于 static 目录）
  * @property {Object} [hooks] - 钩子函数
  * @property {Function} [hooks.onBeforeRequest] - 请求前钩子 (req, config) => Promise<void>
@@ -76,6 +100,8 @@ class PluginManager {
         this.initialized = false;
         /** @type {Object} */
         this.config = null; // 存储服务器全局配置
+        this.trustedUserPlugins = new WeakMap(); // Only loader-approved objects can be registered.
+        this.loadedUserHashes = new Map(); // ESM dependency caches cannot safely hot-update packages.
     }
 
     /**
@@ -91,28 +117,53 @@ class PluginManager {
             if (existsSync(PLUGINS_CONFIG_FILE)) {
                 const content = await fs.readFile(PLUGINS_CONFIG_FILE, 'utf8');
                 const localConfig = JSON.parse(content);
-                
+                if (!localConfig || !localConfig.plugins || typeof localConfig.plugins !== 'object' || Array.isArray(localConfig.plugins)) {
+                    throw new Error('Invalid plugins.json: plugins must be an object');
+                }
+
                 // 3. 合并配置：遍历默认配置中的所有插件
                 for (const [pluginName, defaultPluginConfig] of Object.entries(defaultConfig.plugins)) {
                     const localPluginConfig = localConfig.plugins?.[pluginName];
                     
-                    if (localPluginConfig) {
+                    if (localPluginConfig !== undefined) {
+                        if (!localPluginConfig || typeof localPluginConfig !== 'object' || Array.isArray(localPluginConfig) ||
+                            (Object.hasOwn(localPluginConfig, 'enabled') && typeof localPluginConfig.enabled !== 'boolean')) {
+                            throw new Error(`Invalid configuration for plugin "${pluginName}"`);
+                        }
                         // 本地配置存在，合并但保留本地的 enabled 字段
                         defaultConfig.plugins[pluginName] = {
                             ...defaultPluginConfig,
                             ...localPluginConfig,
-                            enabled: localPluginConfig.enabled // 保留本地的 enabled 字段
+                            enabled: localPluginConfig.enabled ?? defaultPluginConfig.enabled
                         };
                     }
                     // 如果本地配置不存在该插件，使用默认配置
                 }
             }
             
+            // Legacy enabled:true is NOT approval. Verify the complete package before import.
+            for (const [name, settings] of Object.entries(defaultConfig.plugins)) {
+                if (!this.isUserPluginName(name)) continue;
+                if (settings.enabled !== true) {
+                    settings.enabled = false;
+                    continue;
+                }
+                try {
+                    await verifyPluginApproval(path.join(USER_PLUGINS_DIR, name), settings.approval);
+                } catch (error) {
+                    settings.enabled = false;
+                    auditSecurityEvent({ type: 'plugin_approval_rejected', plugin: name, reason: error.code || 'package_unreadable' });
+                }
+            }
             this.pluginsConfig = defaultConfig;
             await this.saveConfig();
         } catch (error) {
             logger.error('[PluginManager] Failed to load config:', error.message);
-            this.pluginsConfig = { plugins: {} };
+            // Never replace a failed read/write with an empty, default-enabled config.
+            // Abort startup/re-init before any lifecycle hook can run.
+            this.initialized = false;
+            for (const plugin of this.plugins.values()) plugin._enabled = false;
+            throw error;
         }
     }
 
@@ -146,9 +197,10 @@ class PluginManager {
                     
                     try {
                         if (pluginsDir === USER_PLUGINS_DIR) {
-                            const enabled = !DEFAULT_DISABLED_PLUGINS.includes(entry.name);
+                            // Uploaded packages may not shadow host-shipped plugins.
+                            if (Object.hasOwn(defaultConfig.plugins, entry.name)) continue;
                             defaultConfig.plugins[entry.name] = {
-                                enabled: enabled,
+                                enabled: false,
                                 description: ''
                             };
                             logger.info(`[PluginManager] Found user plugin for default config: ${entry.name}`);
@@ -156,7 +208,7 @@ class PluginManager {
                         }
 
                         // 动态导入插件以获取其元信息
-                        const pluginModule = await import(`file://${pluginPath}`);
+                        const pluginModule = await import(pathToFileURL(pluginPath).href);
                         const plugin = pluginModule.default || pluginModule;
                         
                         if (plugin && plugin.name) {
@@ -181,6 +233,7 @@ class PluginManager {
                 }
             } catch (error) {
                 logger.error(`[PluginManager] Failed to scan plugins directory ${pluginsDir}:`, error.message);
+                throw error;
             }
         }
         
@@ -199,6 +252,7 @@ class PluginManager {
             await atomicWriteFile(PLUGINS_CONFIG_FILE, JSON.stringify(this.pluginsConfig, null, 2), { encoding: 'utf8', mode: 0o600 });
         } catch (error) {
             logger.error('[PluginManager] Failed to save config:', error.message);
+            throw error;
         }
     }
 
@@ -210,8 +264,10 @@ class PluginManager {
         if (!plugin.name) {
             throw new Error('Plugin must have a name');
         }
-        const isUserPlugin = plugin._baseDir && isInsidePath(USER_PLUGINS_DIR, plugin._baseDir);
-        validatePluginExport(plugin, plugin.name, isUserPlugin);
+        if (isUserPlugin(plugin) && !this.trustedUserPlugins.has(plugin)) {
+            throw pluginTrustError('PLUGIN_APPROVAL_REQUIRED', 'User plugins must be loaded through the approval-checked loader');
+        }
+        validatePluginExport(plugin, plugin.name, isUserPlugin(plugin));
         const existing = this.plugins.get(plugin.name);
         if (existing && existing._placeholder) {
             this.plugins.set(plugin.name, plugin);
@@ -250,9 +306,23 @@ class PluginManager {
         
         for (const [name, plugin] of this.plugins) {
             const pluginConfig = this.pluginsConfig.plugins[name] || {};
-            const enabled = pluginConfig.enabled !== false; // 默认启用
-            
-            if (!enabled) {
+            const enabled = pluginConfig.enabled === true; // Only a successfully loaded explicit configuration enables dispatch.
+            if (isUserPlugin(plugin)) {
+                plugin._enabled = false;
+                if (pluginConfig.enabled === true) {
+                    try {
+                        await this.loadAndInitPlugin(name);
+                    } catch (error) {
+                        this.recordPluginError(plugin, 'approved-load', error);
+                        this.pluginsConfig.plugins[name].enabled = false;
+                        await this.saveConfig();
+                    }
+                }
+                continue;
+            }
+
+            if (!enabled || plugin._placeholder) {
+                plugin._enabled = false;
                 logger.info(`[PluginManager] Plugin "${name}" is disabled, skipping init`);
                 continue;
             }
@@ -308,7 +378,7 @@ class PluginManager {
      */
     getEnabledPlugins() {
         return Array.from(this.plugins.values())
-            .filter(p => p._enabled)
+            .filter(p => p._enabled && !p._placeholder && (!isUserPlugin(p) || this.trustedUserPlugins.has(p)))
             .sort((a, b) => {
                 // 内置插件排在最后
                 const aBuiltin = a._builtin ? 1 : 0;
@@ -445,22 +515,19 @@ class PluginManager {
      * @param {Object} [config] - 当前请求配置
      * @returns {Promise<boolean>} - 是否已处理
      */
+    isPublicRoute(method, requestPath) {
+        return this.getEnabledPlugins().some(plugin => Array.isArray(plugin.routes) &&
+            plugin.routes.some(route => routeMatches(route, method, requestPath) && isPublicPluginRoute(plugin, route)));
+    }
+
     async executeRoutes(method, path, req, res, config) {
         for (const plugin of this.getEnabledPlugins()) {
             if (!Array.isArray(plugin.routes)) continue;
             
             for (const route of plugin.routes) {
-                const methodMatch = route.method === '*' || route.method.toUpperCase() === method;
-                if (!methodMatch) continue;
-                
-                let pathMatch = false;
-                if (route.path instanceof RegExp) {
-                    pathMatch = route.path.test(path);
-                } else if (typeof route.path === 'string') {
-                    pathMatch = path === route.path || path.startsWith(route.path + '/');
-                }
-                
-                if (pathMatch) {
+                if (routeMatches(route, method, path)) {
+                    // Defense in depth: protect direct callers as well as HTTP dispatch.
+                    if (!isPublicPluginRoute(plugin, route) && !await requireManagementAuth(req, res)) return true;
                     try {
                         const handled = await this.executePluginOperation(plugin, `route:${route.path}`, () => route.handler(method, path, req, res, config));
                         if (handled) return true;
@@ -475,17 +542,8 @@ class PluginManager {
             if (plugin._enabled || !Array.isArray(plugin.routes)) continue;
 
             for (const route of plugin.routes) {
-                const methodMatch = route.method === '*' || route.method.toUpperCase() === method;
-                if (!methodMatch) continue;
-
-                let pathMatch = false;
-                if (route.path instanceof RegExp) {
-                    pathMatch = route.path.test(path);
-                } else if (typeof route.path === 'string') {
-                    pathMatch = path === route.path || path.startsWith(route.path + '/');
-                }
-
-                if (pathMatch) {
+                if (routeMatches(route, method, path)) {
+                    if (!await requireManagementAuth(req, res)) return true;
                     res.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
                     res.end(JSON.stringify({
                         success: false,
@@ -602,15 +660,34 @@ class PluginManager {
         }
     }
 
-    /**
-     * 获取插件列表（用于 API）
-     * @returns {Object[]}
-     */
-    getPluginList() {
+    /** Whether a name resolves to an installed user package, not a builtin. */
+    isUserPluginName(name) {
+        validatePluginId(name);
+        const registered = this.plugins.get(name);
+        if (registered?._baseDir) return isUserPlugin(registered);
+        return !existsSync(path.join(BUILTIN_PLUGINS_DIR, name)) && existsSync(path.join(USER_PLUGINS_DIR, name));
+    }
+
+    /** List metadata without importing disabled packages. @returns {Promise<Object[]>} */
+    async getPluginList() {
         const list = [];
         for (const [name, plugin] of this.plugins) {
             const pluginConfig = this.pluginsConfig.plugins[name] || {};
-            const isUserPlugin = !!(plugin._baseDir && isInsidePath(USER_PLUGINS_DIR, plugin._baseDir));
+            const userPlugin = isUserPlugin(plugin);
+            let packageHash = null;
+            let blockedReason = null;
+            let approved = false;
+            if (userPlugin) {
+                try {
+                    packageHash = await getPluginPackageHash(plugin._baseDir);
+                    if (isValidPluginApproval(pluginConfig.approval) && pluginConfig.approval.sha256 === packageHash) {
+                        try { approved = await verifyPluginApprovalSignature(name, pluginConfig.approval); }
+                        catch { /* A forged/lost-key receipt needs reapproval, not package repair. */ }
+                    }
+                } catch (error) {
+                    blockedReason = 'Plugin package cannot be checked; repair its files before approving it';
+                }
+            }
             list.push({
                 name: plugin.name,
                 version: plugin.version || '1.0.0',
@@ -619,7 +696,11 @@ class PluginManager {
                 hasMiddleware: typeof plugin.middleware === 'function',
                 hasRoutes: Array.isArray(plugin.routes) && plugin.routes.length > 0,
                 hasHooks: plugin.hooks && Object.keys(plugin.hooks).length > 0,
-                isBuiltin: !isUserPlugin
+                isBuiltin: !userPlugin,
+                trustMode: userPlugin ? PLUGIN_TRUST_MODE : 'builtin',
+                requiresApproval: userPlugin && !approved,
+                packageHash,
+                blockedReason
             });
         }
         return list;
@@ -630,37 +711,58 @@ class PluginManager {
      * @param {string} name - 插件名称
      * @param {boolean} enabled - 是否启用
      */
-    async setPluginEnabled(name, enabled) {
+    async setPluginEnabled(name, enabled, options = {}) {
         validatePluginId(name);
-        if (!this.pluginsConfig.plugins[name]) {
-            this.pluginsConfig.plugins[name] = {};
-        }
-        this.pluginsConfig.plugins[name].enabled = enabled;
-        await this.saveConfig();
-        
-        const plugin = this.plugins.get(name);
-        if (!plugin) {
-            if (enabled) {
-                await this.loadAndInitPlugin(name);
-            }
-            return;
-        }
+        if (typeof enabled !== 'boolean') throw new Error('Enabled status must be a boolean');
+        return withFileLock(`${PLUGINS_CONFIG_FILE}:operations`, () => this._setPluginEnabled(name, enabled, options));
+    }
 
-        if (enabled) {
-            if (plugin._placeholder) {
-                await this.loadAndInitPlugin(name);
-                return;
+    async _setPluginEnabled(name, enabled, options) {
+        const plugin = this.plugins.get(name);
+        const userPlugin = this.isUserPluginName(name);
+        const previous = this.pluginsConfig.plugins[name] || {};
+        let approval = previous.approval;
+        if (enabled && userPlugin) {
+            if (options.trust !== true || typeof options.packageHash !== 'string' || !/^[a-f0-9]{64}$/.test(options.packageHash)) {
+                throw pluginTrustError('PLUGIN_TRUST_REQUIRED', 'Review the package hash and explicitly accept that this plugin runs with server privileges');
             }
-            if (!plugin._enabled && typeof plugin.init === 'function') {
-                await this.executePluginOperation(plugin, 'init', () => plugin.init(this.config));
+            const hash = await getPluginPackageHash(path.join(USER_PLUGINS_DIR, name));
+            if (hash !== options.packageHash) {
+                throw pluginTrustError('PLUGIN_PACKAGE_CHANGED', 'Plugin files changed; refresh the plugin list and approve again', 409);
             }
-            plugin._enabled = true;
-            plugin._errorCount = 0;
-        } else {
-            if (plugin._enabled && typeof plugin.destroy === 'function') {
-                await this.executePluginOperation(plugin, 'destroy', () => plugin.destroy());
+            if (this.loadedUserHashes.has(name) && this.loadedUserHashes.get(name) !== hash) {
+                throw pluginTrustError('PLUGIN_RESTART_REQUIRED', 'This package changed after being loaded; restart the service before approving it again', 409);
             }
-            plugin._enabled = false;
+            approval = await createPluginApproval(name, hash);
+        }
+        this.pluginsConfig.plugins[name] = { ...previous, enabled, ...(approval ? { approval } : {}) };
+        try {
+            if (enabled) {
+                if (!plugin || plugin._placeholder) {
+                    await this.loadAndInitPlugin(name);
+                } else {
+                    if (!plugin._enabled && typeof plugin.init === 'function') {
+                        await this.executePluginOperation(plugin, 'init', () => plugin.init(this.config));
+                    }
+                    plugin._enabled = true;
+                    plugin._errorCount = 0;
+                }
+            } else if (plugin) {
+                // Revoke dispatch first; destroy() must not keep a plugin enabled on failure.
+                const wasEnabled = plugin._enabled;
+                plugin._enabled = false;
+                if (wasEnabled && typeof plugin.destroy === 'function') {
+                    await this.executePluginOperation(plugin, 'destroy', () => plugin.destroy());
+                }
+            }
+            await this.saveConfig();
+            if (enabled && userPlugin) auditSecurityEvent({ type: 'plugin_trusted', plugin: name, sha256: approval.sha256 });
+        } catch (error) {
+            const loaded = this.plugins.get(name);
+            if (loaded) loaded._enabled = false;
+            this.pluginsConfig.plugins[name] = { ...previous, enabled: false };
+            await this.saveConfig();
+            throw error;
         }
     }
 
@@ -670,7 +772,10 @@ class PluginManager {
      */
     async uninstallPlugin(name) {
         validatePluginId(name);
-        
+        return withFileLock(`${PLUGINS_CONFIG_FILE}:operations`, () => this._uninstallPlugin(name));
+    }
+
+    async _uninstallPlugin(name) {
         // 只能卸载用户插件
         const pluginDir = path.join(USER_PLUGINS_DIR, name);
         
@@ -711,47 +816,38 @@ class PluginManager {
      */
     async loadAndInitPlugin(name) {
         validatePluginId(name);
-        let pluginPath = path.join(USER_PLUGINS_DIR, name, 'index.js');
-        let isUserPlugin = true;
-        if (!existsSync(pluginPath)) {
-            pluginPath = path.join(BUILTIN_PLUGINS_DIR, name, 'index.js');
-            isUserPlugin = false;
+        const userPlugin = this.isUserPluginName(name);
+        const pluginPath = path.join(userPlugin ? USER_PLUGINS_DIR : BUILTIN_PLUGINS_DIR, name, 'index.js');
+        const settings = this.pluginsConfig.plugins[name] || {};
+        let hash;
+        if (userPlugin) {
+            if (settings.enabled !== true) throw pluginTrustError('PLUGIN_APPROVAL_REQUIRED', 'Enable and approve this plugin before loading it');
+            hash = await verifyPluginApproval(path.dirname(pluginPath), settings.approval);
+            if (this.loadedUserHashes.has(name) && this.loadedUserHashes.get(name) !== hash) {
+                throw pluginTrustError('PLUGIN_RESTART_REQUIRED', 'Restart the service before loading a changed package', 409);
+            }
         }
-        
-        if (!existsSync(pluginPath)) {
-            throw new Error(`Plugin entry not found for "${name}" in user, builtin or legacy directories`);
-        }
+        if (!existsSync(pluginPath)) throw new Error(`Plugin entry not found for "${name}"`);
+        const existing = this.plugins.get(name);
+        if (existing && !existing._placeholder) throw new Error(`Plugin "${name}" is already loaded`);
 
         try {
-            if (isUserPlugin) {
-                await scanPluginDirectory(path.dirname(pluginPath), name);
-            }
-            // 动态导入，使用时间戳避免 ESM 缓存
-            const pluginModule = await import(`file://${pluginPath}?t=${Date.now()}`);
+            // Approval happens BEFORE import: top-level code already has host privileges.
+            if (userPlugin) this.loadedUserHashes.set(name, hash);
+            const pluginModule = await import(`${pathToFileURL(pluginPath).href}?approval=${hash || Date.now()}`);
             const plugin = pluginModule.default || pluginModule;
-            
-            if (plugin && plugin.name) {
-                plugin._baseDir = path.dirname(pluginPath);
-                validatePluginExport(plugin, name, isUserPlugin);
-                this.register(plugin);
-                
-                // 重新加载配置以确保包含新插件
-                await this.loadConfig();
-                
-                const pluginConfig = this.pluginsConfig.plugins[plugin.name] || this.pluginsConfig.plugins[name] || {};
-                const enabled = pluginConfig.enabled !== false;
-                
-                if (enabled) {
-                    if (typeof plugin.init === 'function') {
-                        await this.executePluginOperation(plugin, 'init', () => plugin.init(this.config));
-                    }
-                    plugin._enabled = true;
-                    plugin._errorCount = 0;
-                    logger.info(`[PluginManager] Plugin ${plugin.name} loaded and initialized dynamically`);
-                }
-                
-                return plugin;
+            validatePluginExport(plugin, name, userPlugin);
+            plugin._baseDir = path.dirname(pluginPath);
+            plugin._enabled = false;
+            if (userPlugin) this.trustedUserPlugins.set(plugin, hash);
+            this.register(plugin); // Visible during init(), but not dispatched until init succeeds.
+            if (typeof plugin.init === 'function') {
+                await this.executePluginOperation(plugin, 'init', () => plugin.init(this.config));
             }
+            plugin._enabled = true;
+            plugin._errorCount = 0;
+            logger.info(`[PluginManager] Plugin ${name} loaded and initialized (${userPlugin ? 'administrator-trusted, NOT sandboxed' : 'builtin'})`);
+            return plugin;
         } catch (error) {
             logger.error(`[PluginManager] Failed to load and init plugin ${name}:`, error.message);
             throw error;
@@ -795,18 +891,15 @@ export async function discoverPlugins() {
                 }
 
                 const pluginConfig = pluginManager.pluginsConfig.plugins[entry.name] || {};
-                if (pluginsDir === USER_PLUGINS_DIR && pluginConfig.enabled === false) {
+                if (pluginsDir === USER_PLUGINS_DIR) {
                     pluginManager.registerPlaceholder(entry.name, pluginConfig.description || '', path.dirname(pluginPath));
-                    logger.info(`[PluginManager] User plugin "${entry.name}" is disabled, skipping import`);
+                    logger.info(`[PluginManager] User plugin "${entry.name}" discovered without executing code; approval is checked during init`);
                     continue;
                 }
-                
+
                 try {
-                    if (pluginsDir === USER_PLUGINS_DIR) {
-                        await scanPluginDirectory(path.dirname(pluginPath), entry.name);
-                    }
-                    // 动态导入插件
-                    const pluginModule = await import(`file://${pluginPath}`);
+                    // Only trusted, host-shipped modules may execute in this process.
+                    const pluginModule = await import(pathToFileURL(pluginPath).href);
                     const plugin = pluginModule.default || pluginModule;
                     
                     if (plugin && plugin.name) {

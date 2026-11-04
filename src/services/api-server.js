@@ -286,7 +286,7 @@ async function startServer() {
     await pluginManager.initAll(CONFIG);
     
     // Log loaded plugins
-    const pluginList = pluginManager.getPluginList();
+    const pluginList = await pluginManager.getPluginList();
     if (pluginList.length > 0) {
         logger.info(`[Plugins] Loaded ${pluginList.length} plugin(s):`);
         pluginList.forEach(p => {

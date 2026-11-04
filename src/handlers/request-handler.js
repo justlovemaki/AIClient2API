@@ -14,6 +14,7 @@ import { PROMPT_LOG_FILENAME } from '../core/config-manager.js';
 import { getPluginManager } from '../core/plugin-manager.js';
 import { randomUUID } from 'crypto';
 import { handleGrokAssetsProxy } from '../utils/grok-assets-proxy.js';
+import { requireManagementAuth } from '../ui-modules/auth.js';
 
 /**
  * Generate a short unique request ID (8 characters)
@@ -72,6 +73,11 @@ export function createRequestHandler(config, providerPoolManager) {
                     // Serve static files for UI (除了登录页面需要认证)
                     // 检查是否是插件静态文件
                     const pluginManager = getPluginManager();
+                    // Authenticate /api/* before static-file or plugin dispatch, including --no-ui.
+                    // Only host-reviewed routes with an explicit public declaration may opt out.
+                    if (isUIApiPath(path) && !pluginManager.isPublicRoute(method, path)) {
+                        if (!await requireManagementAuth(req, res)) return;
+                    }
                     const isPluginStatic = pluginManager.isPluginStaticPath(path);
                     
                     // 如果 UI 已禁用，拦截所有 UI 相关的静态资源请求

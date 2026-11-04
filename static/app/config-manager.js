@@ -98,6 +98,10 @@ function showChangePasswordModal() {
             <div class="modal-body" style="padding: 1.5rem;">
                 <form id="handoffPasswordForm" onsubmit="return false;">
                     <div class="form-group" style="margin-bottom: 1.25rem;">
+                        <label for="handoffCurrentPassword" data-i18n="config.currentPassword">${t('config.currentPassword')}</label>
+                        <input type="password" id="handoffCurrentPassword" class="form-control" autocomplete="current-password" required>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 1.25rem;">
                         <label for="handoffNewPassword" style="display: block; margin-bottom: 0.5rem; font-weight: 600; font-size: 0.9rem;" data-i18n="config.advanced.adminPassword">${t('config.advanced.adminPassword') || '新密码'}</label>
                         <div class="password-input-wrapper" style="position: relative; display: flex; align-items: center;">
                             <input type="password" id="handoffNewPassword" class="form-control" style="width: 100%; padding-right: 2.5rem;" autocomplete="new-password" required>
@@ -148,6 +152,8 @@ function showChangePasswordModal() {
     const confirmBtn = modal.querySelector('.confirm-btn');
 
     const handleClose = () => {
+        modal.querySelectorAll('input').forEach(input => { input.value = ''; });
+        document.removeEventListener('keydown', handleEscKey);
         modal.remove();
     };
 
@@ -155,10 +161,18 @@ function showChangePasswordModal() {
     cancelBtn.addEventListener('click', handleClose);
 
     confirmBtn.addEventListener('click', async () => {
+        const currentPasswordEl = modal.querySelector('#handoffCurrentPassword');
+        const currentPassword = currentPasswordEl.value;
         const newPasswordEl = modal.querySelector('#handoffNewPassword');
         const confirmPasswordEl = modal.querySelector('#handoffConfirmPassword');
         const newPassword = newPasswordEl.value;
         const confirmPassword = confirmPasswordEl.value;
+
+        if (!currentPassword.trim()) {
+            showToast(t('common.error'), t('config.currentPasswordRequired'), 'error');
+            currentPasswordEl.focus();
+            return;
+        }
 
         if (!newPassword) {
             showToast(t('common.error'), t('common.passwordEmpty') || '密码不能为空', 'error');
@@ -182,7 +196,8 @@ function showChangePasswordModal() {
             confirmBtn.disabled = true;
             confirmBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span data-i18n="config.handoff.saving">${t('config.handoff.saving') || '保存中...'}</span>`;
             
-            await window.apiClient.post('/admin-password', { password: newPassword });
+            await window.apiClient.post('/admin-password', { password: newPassword, currentPassword });
+            modal.querySelectorAll('input').forEach(input => { input.value = ''; });
             
             showToast(t('common.success'), t('config.handoff.passwordUpdated') || '密码修改成功，即将重新登录...', 'success');
             
@@ -679,6 +694,12 @@ async function saveConfiguration(options = {}) {
 
     // 获取后台登录密码（如果有输入）
     const adminPassword = document.getElementById('adminPassword')?.value || '';
+    const currentPassword = document.getElementById('currentAdminPassword')?.value || '';
+    if (adminPassword && !currentPassword.trim()) {
+        showToast(t('common.error'), t('config.currentPasswordRequired'), 'error');
+        document.getElementById('currentAdminPassword')?.focus();
+        return;
+    }
 
     // 保存高级配置参数
     config.SYSTEM_PROMPT_FILE_PATH = document.getElementById('systemPromptFilePath')?.value || 'configs/input_system_prompt.txt';
@@ -798,10 +819,12 @@ async function saveConfiguration(options = {}) {
         let passwordUpdated = false;
         if (adminPassword) {
             try {
-                await window.apiClient.post('/admin-password', { password: adminPassword });
+                await window.apiClient.post('/admin-password', { password: adminPassword, currentPassword });
                 // 清空密码输入框
                 const adminPasswordEl = document.getElementById('adminPassword');
                 if (adminPasswordEl) adminPasswordEl.value = '';
+                const currentPasswordEl = document.getElementById('currentAdminPassword');
+                if (currentPasswordEl) currentPasswordEl.value = '';
                 showToast(t('common.success'), t('common.passwordUpdated') || '密码已更新，即将重新登录...', 'success');
                 passwordUpdated = true;
             } catch (pwdError) {

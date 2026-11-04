@@ -5,6 +5,7 @@ import path from 'path';
 import AdmZip from 'adm-zip';
 import { broadcastEvent } from './event-broadcast.js';
 import { scanConfigFiles } from './config-scanner.js';
+import { resolveUploadedConfigPath } from './config-file-policy.js';
 
 /**
  * 获取上传配置文件列表
@@ -32,22 +33,8 @@ export async function handleGetUploadConfigs(req, res, currentConfig, providerPo
  */
 export async function handleViewConfigFile(req, res, filePath) {
     try {
-        const fullPath = path.join(process.cwd(), filePath);
-        
-        // 安全检查：确保文件路径在允许的目录内
-        const allowedDirs = ['configs'];
+        const fullPath = await resolveUploadedConfigPath(filePath);
         const relativePath = path.relative(process.cwd(), fullPath);
-        const isAllowed = allowedDirs.some(dir => relativePath.startsWith(dir + path.sep) || relativePath === dir);
-        
-        if (!isAllowed) {
-            res.writeHead(403, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-                error: {
-                    message: 'Access denied: can only view files in configs directory'
-                }
-            }));
-            return true;
-        }
         
         if (!existsSync(fullPath)) {
             res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -73,7 +60,7 @@ export async function handleViewConfigFile(req, res, filePath) {
         return true;
     } catch (error) {
         logger.error('[UI API] Failed to view config file:', error);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.writeHead(error.status === 403 ? 403 : 500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             error: {
                 message: 'Failed to view config file: ' + error.message
@@ -88,22 +75,8 @@ export async function handleViewConfigFile(req, res, filePath) {
  */
 export async function handleDownloadConfigFile(req, res, filePath) {
     try {
-        const fullPath = path.join(process.cwd(), filePath);
-        
-        // 安全检查：确保文件路径在允许的目录内
-        const allowedDirs = ['configs'];
+        const fullPath = await resolveUploadedConfigPath(filePath);
         const relativePath = path.relative(process.cwd(), fullPath);
-        const isAllowed = allowedDirs.some(dir => relativePath.startsWith(dir + path.sep) || relativePath === dir);
-        
-        if (!isAllowed) {
-            res.writeHead(403, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-                error: {
-                    message: 'Access denied: can only download files in configs directory'
-                }
-            }));
-            return true;
-        }
         
         if (!existsSync(fullPath)) {
             res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -127,7 +100,7 @@ export async function handleDownloadConfigFile(req, res, filePath) {
         return true;
     } catch (error) {
         logger.error('[UI API] Failed to download config file:', error);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.writeHead(error.status === 403 ? 403 : 500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             error: {
                 message: 'Failed to download config file: ' + error.message
@@ -142,22 +115,8 @@ export async function handleDownloadConfigFile(req, res, filePath) {
  */
 export async function handleDeleteConfigFile(req, res, filePath) {
     try {
-        const fullPath = path.join(process.cwd(), filePath);
-        
-        // 安全检查：确保文件路径在允许的目录内
-        const allowedDirs = ['configs'];
+        const fullPath = await resolveUploadedConfigPath(filePath);
         const relativePath = path.relative(process.cwd(), fullPath);
-        const isAllowed = allowedDirs.some(dir => relativePath.startsWith(dir + path.sep) || relativePath === dir);
-        
-        if (!isAllowed) {
-            res.writeHead(403, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-                error: {
-                    message: 'Access denied: can only delete files in configs directory'
-                }
-            }));
-            return true;
-        }
         
         if (!existsSync(fullPath)) {
             res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -188,7 +147,7 @@ export async function handleDeleteConfigFile(req, res, filePath) {
         return true;
     } catch (error) {
         logger.error('[UI API] Failed to delete config file:', error);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.writeHead(error.status === 403 ? 403 : 500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             error: {
                 message: 'Failed to delete config file: ' + error.message
@@ -220,6 +179,8 @@ export async function handleDownloadAllConfigs(req, res) {
                 const itemZipPath = zipPath ? path.join(zipPath, item.name) : item.name;
                 
                 if (item.isFile()) {
+                    try { await resolveUploadedConfigPath(fullPath); }
+                    catch (error) { if (error.status === 403) continue; throw error; }
                     const content = await fs.readFile(fullPath);
                     zip.addFile(itemZipPath.replace(/\\/g, '/'), content);
                 } else if (item.isDirectory()) {
@@ -369,22 +330,8 @@ export async function handleDeleteUnboundConfigs(req, res, currentConfig, provid
  */
 export async function handleForceExpireConfig(req, res, filePath, currentConfig, providerPoolManager) {
     try {
-        const fullPath = path.join(process.cwd(), filePath);
-        
-        // 安全检查：确保文件路径在允许的目录内
-        const allowedDirs = ['configs'];
+        const fullPath = await resolveUploadedConfigPath(filePath);
         const relativePath = path.relative(process.cwd(), fullPath);
-        const isAllowed = allowedDirs.some(dir => relativePath.startsWith(dir + path.sep) || relativePath === dir);
-        
-        if (!isAllowed) {
-            res.writeHead(403, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-                error: {
-                    message: 'Access denied: can only access files in configs directory'
-                }
-            }));
-            return true;
-        }
         
         if (!existsSync(fullPath)) {
             res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -432,7 +379,7 @@ export async function handleForceExpireConfig(req, res, filePath, currentConfig,
         return true;
     } catch (error) {
         logger.error('[UI API] Failed to force refresh config:', error);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.writeHead(error.status === 403 ? 403 : 500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             error: {
                 message: 'Failed to force refresh config: ' + error.message
