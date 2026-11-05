@@ -18,8 +18,10 @@ const GROK_CLI_PROVIDER = 'grok-cli-oauth';
 const GROK_CLI_OAUTH_CONFIG = {
     issuer: 'https://auth.x.ai',
     discoveryUrl: 'https://auth.x.ai/.well-known/openid-configuration',
+    deviceCodeEndpoint: 'https://auth.x.ai/oauth2/device/code',
+    deviceGrantType: 'urn:ietf:params:oauth:grant-type:device_code',
     clientId: 'b1a00492-073a-47ea-816f-4c329264a828',
-    scope: 'openid profile email offline_access grok-cli:access api:access',
+    scope: 'openid profile email offline_access grok-cli:access api:access conversations:read conversations:write workspaces:read workspaces:write',
     redirectUri: 'http://127.0.0.1:56121/callback',
     port: 56121,
     defaultApiBaseUrl: 'https://api.x.ai/v1',
@@ -155,7 +157,7 @@ function validateOAuthEndpoint(rawUrl, field) {
     return value;
 }
 
-class GrokCliAuth {
+export class GrokCliAuth {
     constructor(config) {
         this.config = config;
         const axiosConfig = { timeout: 30000 };
@@ -231,6 +233,122 @@ class GrokCliAuth {
             tokenEndpoint: discovery.tokenEndpoint,
             server
         };
+    }
+
+    async requestDeviceCode() {
+        logger.info(`${GROK_CLI_OAUTH_CONFIG.logPrefix} Requesting xAI device code...`);
+
+        try {
+            const response = await this.httpClient.post(
+                GROK_CLI_OAUTH_CONFIG.deviceCodeEndpoint,
+                new URLSearchParams({
+                    client_id: GROK_CLI_OAUTH_CONFIG.clientId,
+                    scope: GROK_CLI_OAUTH_CONFIG.scope,
+                    referrer: 'grok-build'
+                }).toString(),
+                {
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Accept': 'application/json',
+                        'x-grok-client-surface': 'ui'
+                    }
+                }
+            );
+
+            const deviceCode = response.data;
+            if (!deviceCode?.device_code || !deviceCode?.user_code || !deviceCode?.verification_uri) {
+                throw new Error('xAI returned an incomplete device authorization response');
+            }
+
+            return {
+                ...deviceCode,
+                interval: Math.max(Number(deviceCode.interval) || 5, 1),
+                expires_in: Math.max(Number(deviceCode.expires_in) || 600, 600)
+            };
+        } catch (error) {
+            logger.error(`${GROK_CLI_OAUTH_CONFIG.logPrefix} Device code request failed:`, error.response?.data || error.message);
+            throw new Error(`Failed to request Grok CLI device code: ${error.response?.data?.error_description || error.message}`);
+        }
+    }
+
+    async completeDeviceCodeFlow(deviceCode, tokenEndpoint, isCancelled = () => false) {
+        const endpoint = tokenEndpoint || `${GROK_CLI_OAUTH_CONFIG.issuer}/oauth2/token`;
+        const deadline = Date.now() + deviceCode.expires_in * 1000;
+        let interval = deviceCode.interval;
+
+        const postWithCancellation = async requestBody => {
+            const controller = new AbortController();
+            const cancellationWatcher = new Promise((_, reject) => {
+                const timer = setInterval(() => {
+                    if (!isCancelled()) return;
+                    clearInterval(timer);
+                    controller.abort();
+                    reject(new Error('Grok CLI authorization session was replaced'));
+                }, 25);
+                controller.signal.addEventListener('abort', () => clearInterval(timer), { once: true });
+            });
+            try {
+                return await Promise.race([
+                    this.httpClient.post(endpoint, requestBody, {
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'Accept': 'application/json',
+                            'x-grok-client-surface': 'ui'
+                        },
+                        validateStatus: () => true,
+                        signal: controller.signal
+                    }),
+                    cancellationWatcher
+                ]);
+            } finally {
+                controller.abort();
+            }
+        };
+
+        while (Date.now() < deadline) {
+            if (isCancelled()) {
+                throw new Error('Grok CLI authorization session was replaced');
+            }
+
+            await new Promise(resolve => setTimeout(resolve, interval * 1000));
+            if (isCancelled()) {
+                throw new Error('Grok CLI authorization session was replaced');
+            }
+
+            const response = await postWithCancellation(
+                new URLSearchParams({
+                    grant_type: GROK_CLI_OAUTH_CONFIG.deviceGrantType,
+                    device_code: deviceCode.device_code,
+                    client_id: GROK_CLI_OAUTH_CONFIG.clientId
+                }).toString()
+            );
+
+            if (isCancelled()) {
+                throw new Error('Grok CLI authorization session was replaced');
+            }
+
+            if (response.status >= 200 && response.status < 300) {
+                return response.data;
+            }
+
+            const errorCode = response.data?.error;
+            const description = response.data?.error_description || errorCode || `HTTP ${response.status}`;
+            if (errorCode === 'authorization_pending') continue;
+            if (errorCode === 'slow_down') {
+                interval += 5;
+                continue;
+            }
+            if (errorCode === 'access_denied') {
+                throw new Error(`Grok CLI authorization denied: ${description}`);
+            }
+            if (errorCode === 'expired_token') {
+                throw new Error('Grok CLI device code expired. Start authorization again.');
+            }
+
+            throw new Error(`Grok CLI device token exchange failed: ${description}`);
+        }
+
+        throw new Error('Grok CLI device code expired. Start authorization again.');
     }
 
     async completeOAuthFlow(code, state, expectedState, pkce, tokenEndpoint) {
@@ -683,6 +801,7 @@ export async function handleGrokCliOAuth(currentConfig, options = {}) {
                     if (session.pollTimer) {
                         clearInterval(session.pollTimer);
                     }
+                    session.cancelled = true;
                     global.grokCliOAuthSessions.delete(sessionId);
                 } catch (error) {
                     logger.warn(`${GROK_CLI_OAUTH_CONFIG.logPrefix} Failed to clean up session ${sessionId}: ${error.message}`);
@@ -690,85 +809,85 @@ export async function handleGrokCliOAuth(currentConfig, options = {}) {
             }
         }
 
-        const { authUrl, state, pkce, tokenEndpoint, server } = await auth.generateAuthUrl();
+        const deviceCode = await auth.requestDeviceCode();
+        const state = crypto.randomBytes(16).toString('hex');
+        const tokenEndpoint = `${GROK_CLI_OAUTH_CONFIG.issuer}/oauth2/token`;
+        const authUrl = deviceCode.verification_uri_complete || deviceCode.verification_uri;
 
         if (!global.grokCliOAuthSessions) {
             global.grokCliOAuthSessions = new Map();
         }
 
         const sessionId = state;
-        let pollCount = 0;
-        const maxPollCount = 100;
-        const pollInterval = 3000;
-        let isCompleted = false;
-
         const session = {
             auth,
             state,
-            pkce,
             tokenEndpoint,
-            server,
-            pollTimer: null,
+            deviceCode,
+            cancelled: false,
             createdAt: Date.now()
         };
 
         global.grokCliOAuthSessions.set(sessionId, session);
 
-        const pollTimer = setInterval(() => {
-            pollCount++;
-            if (pollCount <= maxPollCount && !isCompleted) {
-                logger.info(`${GROK_CLI_OAUTH_CONFIG.logPrefix} Waiting for callback... (${pollCount}/${maxPollCount})`);
-            }
-
-            if (pollCount >= maxPollCount && !isCompleted) {
-                clearInterval(pollTimer);
-                logger.info(`${GROK_CLI_OAUTH_CONFIG.logPrefix} Polling timeout, releasing session for next authorization`);
-                global.grokCliOAuthSessions.delete(sessionId);
-            }
-        }, pollInterval);
-
-        session.pollTimer = pollTimer;
-
-        server.once('auth-success', async (result) => {
-            isCompleted = true;
-            clearInterval(pollTimer);
-
+        (async () => {
             try {
-                logger.info(`${GROK_CLI_OAUTH_CONFIG.logPrefix} Received auth callback, completing OAuth flow...`);
+                logger.info(`${GROK_CLI_OAUTH_CONFIG.logPrefix} Waiting for device authorization...`);
+                const tokens = await auth.completeDeviceCodeFlow(
+                    deviceCode,
+                    tokenEndpoint,
+                    () => session.cancelled || global.grokCliOAuthSessions.get(sessionId) !== session
+                );
+                if (session.cancelled || global.grokCliOAuthSessions.get(sessionId) !== session) {
+                    return;
+                }
+                const claims = auth.parseJWT(tokens.id_token);
+                const credentials = auth.buildCredentials(tokens, {
+                    email: claims.email,
+                    sub: claims.sub,
+                    tokenEndpoint
+                });
+                if (session.cancelled || global.grokCliOAuthSessions.get(sessionId) !== session) {
+                    return;
+                }
+                const saveResult = await auth.saveCredentials(credentials);
+                if (session.cancelled || global.grokCliOAuthSessions.get(sessionId) !== session) {
+                    return;
+                }
+                const savedCredentials = {
+                    ...credentials,
+                    credPath: saveResult.credsPath,
+                    relativePath: saveResult.relativePath
+                };
 
-                const session = global.grokCliOAuthSessions.get(sessionId);
-                if (!session) {
-                    logger.error(`${GROK_CLI_OAUTH_CONFIG.logPrefix} Session not found`);
+                global.grokCliOAuthSessions.delete(sessionId);
+
+                if (session.cancelled) {
                     return;
                 }
 
-                const credentials = await auth.completeOAuthFlow(
-                    result.code,
-                    result.state,
-                    session.state,
-                    session.pkce,
-                    session.tokenEndpoint
-                );
-
-                global.grokCliOAuthSessions.delete(sessionId);
-
                 broadcastEvent('oauth_success', {
                     provider: GROK_CLI_PROVIDER,
-                    credPath: credentials.credPath,
-                    relativePath: credentials.relativePath,
+                    credPath: savedCredentials.credPath,
+                    relativePath: savedCredentials.relativePath,
                     timestamp: new Date().toISOString(),
-                    email: credentials.email,
-                    sub: credentials.sub
+                    email: savedCredentials.email,
+                    sub: savedCredentials.sub
                 });
 
                 await autoLinkProviderConfigs(CONFIG, {
                     onlyCurrentCred: true,
-                    credPath: credentials.relativePath
+                    credPath: savedCredentials.relativePath
                 });
 
                 logger.info(`${GROK_CLI_OAUTH_CONFIG.logPrefix} OAuth flow completed successfully`);
             } catch (error) {
-                logger.error(`${GROK_CLI_OAUTH_CONFIG.logPrefix} Failed to complete OAuth flow: ${error.message}`);
+                if (session.cancelled) {
+                    return;
+                }
+
+                logger.error(`${GROK_CLI_OAUTH_CONFIG.logPrefix} Failed to complete device OAuth flow: ${error.message}`);
+                global.grokCliOAuthSessions.delete(sessionId);
 
                 broadcastEvent('oauth_error', {
                     provider: GROK_CLI_PROVIDER,
@@ -776,36 +895,24 @@ export async function handleGrokCliOAuth(currentConfig, options = {}) {
                     timestamp: new Date().toISOString()
                 });
             }
-        });
-
-        server.once('auth-error', (error) => {
-            isCompleted = true;
-            clearInterval(pollTimer);
-            logger.error(`${GROK_CLI_OAUTH_CONFIG.logPrefix} Auth error: ${error.message}`);
-            global.grokCliOAuthSessions.delete(sessionId);
-
-            broadcastEvent('oauth_error', {
-                provider: GROK_CLI_PROVIDER,
-                error: error.message,
-                timestamp: new Date().toISOString()
-            });
-        });
+        })();
 
         return {
             success: true,
             authUrl,
             authInfo: {
                 provider: GROK_CLI_PROVIDER,
-                method: 'oauth2-pkce',
+                method: 'oauth2-device',
                 sessionId,
-                redirectUri: GROK_CLI_OAUTH_CONFIG.redirectUri,
-                port: GROK_CLI_OAUTH_CONFIG.port,
+                userCode: deviceCode.user_code,
+                verificationUri: deviceCode.verification_uri,
+                expiresIn: deviceCode.expires_in,
+                interval: deviceCode.interval,
                 instructions: [
-                    '1. 点击下方按钮在浏览器中打开授权链接',
-                    '2. 使用您的 xAI/Grok 账户登录',
-                    '3. 授权 Grok CLI 访问 xAI API',
-                    '4. 授权成功后会自动保存凭据',
-                    '5. 如果浏览器未自动跳转，请手动复制回调 URL'
+                    '1. 点击下方按钮打开 xAI 验证页面',
+                    `2. 在页面中确认代码 ${deviceCode.user_code}`,
+                    '3. 完成授权后 AIClient2API 会自动保存凭据',
+                    '4. 无需将代码粘贴到 Grok Build'
                 ]
             }
         };
