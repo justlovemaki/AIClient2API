@@ -24,8 +24,6 @@ export {
     // iFlow OAuth
     handleIFlowOAuth,
     refreshIFlowTokens,
-    // Grok Auth
-    batchImportGrokTokensStream,
     // Grok CLI OAuth
     refreshGrokCliTokensWithRetry,
     handleGrokCliOAuth,

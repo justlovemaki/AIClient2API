@@ -173,19 +173,6 @@ export const PROVIDER_MODELS = {
         'grok-3'
     ],
     'forward-api': [],
-    'grok-web': [
-        'grok-4.1-mini',
-        'grok-4.1-thinking',
-        'grok-4.20',
-        'grok-4.20-auto',
-        'grok-4.20-fast',
-        'grok-4.20-expert',
-        'grok-4.20-heavy',
-        'grok-imagine-1.0',
-        'grok-imagine-1.0-edit',
-        'grok-imagine-1.0-fast',
-        'grok-imagine-1.0-fast-edit',
-    ],
     'github-copilot': [
         'gpt-4.1',
         'auto'
