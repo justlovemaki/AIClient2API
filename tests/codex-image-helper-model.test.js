@@ -135,6 +135,46 @@ describe('Codex image helper model request construction', () => {
 });
 
 describe('Codex reasoning effort defaults and explicit null (#759)', () => {
+    test.each(['gpt-5.6-sol', 'gpt-5.6-sol-fast'])(
+        '%s does not clear reasoning just because the image tool is available', async (model) => {
+            for (const effort of ['low', 'medium', 'high', 'xhigh', 'minimal', null]) {
+                const request = imageRequest({ reasoning: { effort, summary: 'detailed' } });
+                const result = await prepare({}, model, request);
+                const expectedEffort = effort === null ? null
+                    : model.endsWith('-fast') ? 'xhigh'
+                    : effort === 'minimal' ? 'none' : effort;
+                expect(result.reasoning).toEqual({ effort: expectedEffort, summary: 'detailed' });
+                expect(request.reasoning.effort).toBe(effort);
+                expect(result.service_tier).toBe(model.endsWith('-fast') ? 'priority' : undefined);
+            }
+        }
+    );
+
+    test.each(['gpt-5.6-sol', 'gpt-5.6-sol-fast'])(
+        '%s retains reasoning defaults when tool choice disables image generation', async (model) => {
+            for (const tool_choice of ['none', { type: 'function', name: 'lookup' }, { type: 'web_search' },
+                { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'web_search' }] }]) {
+                const result = await prepare({}, model, imageRequest({ tool_choice }));
+                expect(result.reasoning.effort).toBe(model.endsWith('-fast') ? 'xhigh' : 'medium');
+            }
+        }
+    );
+
+    test.each(['auto', 'required', { type: 'image_generation' },
+        { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'image_generation' }] }])(
+        'keeps the fast effort default when image generation is only available: %j', async (tool_choice) => {
+            const result = await prepare({}, 'gpt-5.6-sol-fast', imageRequest({ tool_choice, reasoning: { effort: 'high' } }));
+            expect(result.reasoning.effort).toBe('xhigh');
+        }
+    );
+
+    test('a request without an image tool keeps the original reasoning defaults and minimal alias', async () => {
+        const result = await prepare({}, 'gpt-5.3-codex-spark');
+        expect(result.tools).not.toEqual(expect.arrayContaining([expect.objectContaining({ type: 'image_generation' })]));
+        expect(result.reasoning.effort).toBe('medium');
+        const minimal = await prepare({}, 'gpt-5.3-codex-spark', imageRequest({ reasoning: { effort: 'minimal' } }));
+        expect(minimal.reasoning.effort).toBe('none');
+    });
     test.each([
         ['gpt-image-2', null],
         ['gpt-image-2-fast', null],

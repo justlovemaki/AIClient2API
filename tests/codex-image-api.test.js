@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import { Readable } from 'node:stream';
+import { EventEmitter } from 'node:events';
 import axios from 'axios';
 import { getApiServiceWithFallback } from '../src/services/service-manager.js';
 
@@ -38,6 +39,7 @@ beforeEach(() => {
     });
     pool = {
         releaseSlot: jest.fn(),
+        markProviderHealthy: jest.fn(),
         markProviderUnhealthy: jest.fn(),
         markProviderUnhealthyWithRecoveryTime: jest.fn()
     };
@@ -64,14 +66,19 @@ function editRequest() {
 }
 
 async function dispatch(req, route = '/v1/images/generations', currentConfig = config, manager = pool) {
-    const res = {
+    const res = Object.assign(new EventEmitter(), {
         writableEnded: false,
+        chunks: [],
         writeHead: jest.fn(),
+        write: jest.fn(function (chunk) {
+            this.chunks.push(chunk);
+            return true;
+        }),
         end: jest.fn(function (body) {
             this.writableEnded = true;
-            this.body = JSON.parse(body);
+            if (body) this.body = JSON.parse(body);
         })
-    };
+    });
     expect(await handleAPIRequests('POST', route, req, res, currentConfig, null, manager)).toBe(true);
     return res;
 }
@@ -80,6 +87,115 @@ function expectSlotReleased() {
     expect(pool.releaseSlot).toHaveBeenCalledTimes(1);
     expect(pool.releaseSlot).toHaveBeenCalledWith(config.MODEL_PROVIDER, 'test-node');
 }
+
+describe('Codex Chat / Responses image transport (mock upstream, not live generation)', () => {
+    test.each([
+        ['gpt-image-2', null],
+        ['gpt-image-2-fast', null],
+        ['gpt-5.6-sol', 'medium'],
+        ['gpt-5.6-sol-fast', 'xhigh']
+    ])('%s keeps the image tool and delivers images through Chat / Responses', async (model, effort) => {
+        for (const route of ['/v1/chat/completions', '/v1/responses']) {
+            for (const stream of [false, true]) {
+                const response = { id: 'resp_chat_image', model: 'gpt-5.6-sol', status: 'completed', output: [imageOutput] };
+                const events = [
+                    { type: 'response.created', response: { ...response, status: 'in_progress', output: [] } },
+                    { type: 'response.completed', response }
+                ];
+                const sse = events.map(event => `data: ${JSON.stringify(event)}\n\n`).join('');
+                // This tests response transport only, not whether the live upstream will generate an image.
+                axios.request.mockImplementation(async (upstream) => ({
+                    data: upstream.responseType === 'stream' ? Readable.from([Buffer.from(sse)]) : sse
+                }));
+                const req = request({
+                    model, stream,
+                    messages: [{ role: 'user', content: 'Generate an image of a cat.' }],
+                    input: 'Generate an image of a cat.'
+                });
+                const res = await dispatch(req, route);
+                const upstream = axios.request.mock.calls.at(-1)[0].data;
+                expect(upstream.tools).toEqual(expect.arrayContaining([
+                    expect.objectContaining({ type: 'image_generation' })
+                ]));
+                expect(upstream.reasoning.effort).toBe(effort);
+                expect(upstream.input).toEqual(expect.arrayContaining([
+                    expect.objectContaining({ role: 'user' })
+                ]));
+                if (stream) {
+                    expect(res.chunks.join('')).toContain(imageOutput.result);
+                    if (route.endsWith('/completions')) {
+                        expect(res.chunks.join('')).toContain('data:image/png;base64,');
+                        expect(res.chunks.join('')).toContain('[DONE]');
+                    }
+                } else {
+                    expect(res.writeHead).toHaveBeenCalledWith(200, expect.any(Object));
+                    if (route.endsWith('/completions')) {
+                        expect(res.body.choices[0].message.content).toContain(`data:image/png;base64,${imageOutput.result}`);
+                    } else {
+                        expect(res.body.output).toEqual(expect.arrayContaining([
+                            expect.objectContaining({ type: 'image_generation_call', result: imageOutput.result })
+                        ]));
+                    }
+                }
+                expect(res.writableEnded).toBe(true);
+            }
+        }
+    });
+});
+
+describe.each(['/v1/chat/completions', '/v1/responses'])('Request-local complexity recovery at %s', (route) => {
+    test.each([false, true])('only the failed request is downgraded, stream=%s', async (stream) => {
+        const message = "Complexity 'high' is not supported for this image model.";
+        axios.request.mockImplementation(async (upstream) => {
+            const events = [{ type: 'response.completed', response: { id: 'resp_success', output: [imageOutput] } }];
+            const sse = events.map(event => `data: ${JSON.stringify(event)}\n\n`).join('');
+            return { data: upstream.responseType === 'stream' ? Readable.from([Buffer.from(sse)]) : sse };
+        });
+        const error = new Error(message);
+        error.response = { status: 400, data: { error: { message, param: 'complexity' } } };
+        axios.request.mockRejectedValueOnce(error);
+        const body = {
+            model: 'gpt-5.6-sol', stream,
+            messages: [{ role: 'user', content: 'Draw a cat.' }], input: 'Draw a cat.',
+            reasoning: { effort: 'high' }
+        };
+        const res = await dispatch(request(body), route);
+        expect(axios.request.mock.calls.map(([config]) => config.data.reasoning.effort)).toEqual(['high', null]);
+        expect(getApiServiceWithFallback).toHaveBeenCalledTimes(1);
+        expect(pool.markProviderUnhealthy).not.toHaveBeenCalled();
+        expect(pool.markProviderUnhealthyWithRecoveryTime).not.toHaveBeenCalled();
+        if (stream) expect(res.chunks.join('')).toContain(imageOutput.result);
+        else expect(JSON.stringify(res.body)).toContain(imageOutput.result);
+
+        await dispatch(request(body), route);
+        expect(axios.request.mock.calls.map(([config]) => config.data.reasoning.effort)).toEqual(['high', null, 'high']);
+    });
+});
+
+describe('Explicit image-model effort parity across endpoint payloads', () => {
+    test.each([undefined, null, 'medium', 'high', 'xhigh'])(
+        'an explicit image model preserves the same effort across endpoints for input %s', async (effort) => {
+            const routes = ['/v1/images/generations', '/v1/chat/completions', '/v1/responses'];
+            const payloads = [];
+            for (const route of routes) {
+                const res = await dispatch(request({
+                    model: 'gpt-image-2',
+                    messages: [{ role: 'user', content: 'Draw a cat.' }],
+                    input: 'Draw a cat.',
+                    reasoning: { effort }
+                }), route);
+                expect(res.writeHead).toHaveBeenCalledWith(200, expect.any(Object));
+                payloads.push(axios.request.mock.calls.at(-1)[0].data);
+            }
+            expect(payloads.map(payload => payload.model)).toEqual(['gpt-5.6-sol', 'gpt-5.6-sol', 'gpt-5.6-sol']);
+            const expectedEffort = effort === undefined ? null : effort;
+            expect(payloads.map(payload => payload.reasoning.effort)).toEqual([expectedEffort, expectedEffort, expectedEffort]);
+            for (const payload of payloads) {
+                expect(payload.tools).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'image_generation' })]));
+            }
+        }
+    );
+});
 
 describe('Codex Images API regression (#759)', () => {
     test.each([

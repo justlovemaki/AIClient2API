@@ -60,6 +60,31 @@ export function resolveCodexReasoningEffort(requestBody, defaultEffort) {
     return effort === undefined ? defaultEffort : effort;
 }
 
+/** Match only the known upstream image-model parameter error, never generic refusals. */
+export function isCodexImageComplexityMessage(message) {
+    return typeof message === 'string'
+        && /\bComplexity\s+['"][^'"]+['"]\s+is not supported for this image model\b/i.test(message);
+}
+
+/** A request-local workaround; callers must enforce a one-retry limit. */
+export function getCodexImageEffortRetryBody(error, requestBody) {
+    if (Number(error.response?.status) !== 400
+        || error.imageGenerationAlreadySucceeded
+        || typeof requestBody.reasoning?.effort !== 'string'
+        || !Array.isArray(requestBody.tools)
+        || !requestBody.tools.some(tool => tool?.type === 'image_generation')) {
+        return null;
+    }
+    if (!isCodexImageComplexityMessage(error.message)
+        && !isCodexImageComplexityMessage(error.response?.data?.error?.message)) {
+        return null;
+    }
+    return {
+        ...requestBody,
+        reasoning: { ...requestBody.reasoning, effort: null }
+    };
+}
+
 export function normalizeCodexInstructions(requestBody) {
     if (!Array.isArray(requestBody.input)) {
         return requestBody;
