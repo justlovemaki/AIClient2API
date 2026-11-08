@@ -70,6 +70,7 @@ export function isCodexImageComplexityMessage(message) {
 export function getCodexImageEffortRetryBody(error, requestBody) {
     if (Number(error.response?.status) !== 400
         || error.imageGenerationAlreadySucceeded
+        || error.imageRecoveryAttempted
         || typeof requestBody.reasoning?.effort !== 'string'
         || !Array.isArray(requestBody.tools)
         || !requestBody.tools.some(tool => tool?.type === 'image_generation')) {
@@ -82,6 +83,65 @@ export function getCodexImageEffortRetryBody(error, requestBody) {
     return {
         ...requestBody,
         reasoning: { ...requestBody.reasoning, effort: null }
+    };
+}
+
+/** Only eligible for a request-local fallback, never a new default for ordinary chat. */
+export function canRecoverCodexImageRequest(body) {
+    return typeof body.reasoning?.effort === 'string'
+        && Array.isArray(body.tools) && body.tools.some(tool => tool?.type === 'image_generation');
+}
+
+export function getCodexGeneratedImages(response) {
+    return (Array.isArray(response?.output) ? response.output : []).filter(item => item?.type === 'image_generation_call'
+        && typeof item.result === 'string' && item.result.trim());
+}
+
+/**
+ * Observed in app-2026-11-08.log: completed response, unfinished image calls,
+ * zero image usage, no result and no structured error. Never match apology text.
+ */
+export function isCodexIncompleteImageResponse(event, body) {
+    const response = event?.response;
+    if (!canRecoverCodexImageRequest(body) || event?.type !== 'response.completed'
+        || response?.status !== 'completed' || response.error || response.background === true
+        || response.tool_usage?.image_gen?.total_tokens !== 0 || !Array.isArray(response.output)) {
+        return false;
+    }
+    const images = response.output.filter(item => item?.type === 'image_generation_call');
+    return images.length > 0 && images.every(item => !item.result && !item.error
+        && ['generating', 'in_progress'].includes(item.status));
+}
+
+function addUsageCounters(first, second) {
+    first = first || {};
+    second = second || {};
+    const result = { ...first, ...second };
+    for (const key of Object.keys(result)) {
+        if (typeof first[key] === 'number' || typeof second[key] === 'number') {
+            result[key] = (typeof first[key] === 'number' ? first[key] : 0)
+                + (typeof second[key] === 'number' ? second[key] : 0);
+        } else if (first[key] && second[key] && typeof first[key] === 'object' && typeof second[key] === 'object') {
+            result[key] = addUsageCounters(first[key], second[key]);
+        }
+    }
+    return result;
+}
+
+/** Retain the committed prefix; replace only the failed image segment and its apology. */
+export function mergeCodexImageRecovery(original, recovered) {
+    const response = original.response;
+    const replacement = recovered.response;
+    const firstImage = response.output.findIndex(item => item.type === 'image_generation_call');
+    return {
+        ...original,
+        response: {
+            ...response,
+            completed_at: replacement.completed_at ?? response.completed_at,
+            output: [...response.output.slice(0, firstImage), ...getCodexGeneratedImages(replacement)],
+            usage: addUsageCounters(response.usage, replacement.usage),
+            tool_usage: addUsageCounters(response.tool_usage, replacement.tool_usage)
+        }
     };
 }
 

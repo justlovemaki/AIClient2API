@@ -1174,10 +1174,12 @@ export class CodexConverter extends BaseConverter {
         }
 
         if (type === 'response.output_item.done' && chunk.item?.type === 'image_generation_call') {
+            const imageMarkdown = this.codexImageGenerationToMarkdown(chunk.item);
+            if (!imageMarkdown) return null;
             const template = buildTemplate();
             template.choices[0].delta = {
                 role: 'assistant',
-                content: this.codexImageGenerationToMarkdown(chunk.item),
+                content: imageMarkdown,
                 reasoning_content: null,
                 tool_calls: null
             };

@@ -134,6 +134,12 @@ describe('Codex image helper model request construction', () => {
     });
 });
 
+test('unfinished native image calls do not become empty Chat content chunks', () => {
+    const converter = new CodexConverter();
+    const event = { type: 'response.output_item.done', item: { id: 'ig_pending', type: 'image_generation_call', status: 'generating' } };
+    expect(converter.toOpenAIStreamChunk(event, 'gpt-5.6-sol', 'pending-image-test')).toBeNull();
+});
+
 describe('Codex reasoning effort defaults and explicit null (#759)', () => {
     test.each(['gpt-5.6-sol', 'gpt-5.6-sol-fast'])(
         '%s does not clear reasoning just because the image tool is available', async (model) => {

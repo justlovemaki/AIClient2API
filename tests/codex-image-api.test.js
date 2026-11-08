@@ -2,6 +2,7 @@ import { jest } from '@jest/globals';
 import { Readable } from 'node:stream';
 import { EventEmitter } from 'node:events';
 import axios from 'axios';
+import { incompleteImageEvents } from './fixtures/codex-incomplete-image-stream.js';
 import { getApiServiceWithFallback } from '../src/services/service-manager.js';
 
 jest.mock('axios', () => ({ __esModule: true, default: { request: jest.fn() } }));
@@ -21,7 +22,7 @@ let handleAPIRequests;
 let CodexApiService;
 let pool;
 const config = { MODEL_PROVIDER: 'openai-codex-oauth', providerPools: {} };
-const imageOutput = { type: 'image_generation_call', result: 'aW1hZ2U=', output_format: 'png' };
+const imageOutput = { id: 'ig_recovered', type: 'image_generation_call', status: 'completed', result: 'aW1hZ2U=', output_format: 'png' };
 
 beforeAll(async () => {
     await import('../src/converters/register-converters.js');
@@ -169,6 +170,61 @@ describe.each(['/v1/chat/completions', '/v1/responses'])('Request-local complexi
 
         await dispatch(request(body), route);
         expect(axios.request.mock.calls.map(([config]) => config.data.reasoning.effort)).toEqual(['high', null, 'high']);
+    });
+});
+
+describe.each(['/v1/chat/completions', '/v1/responses'])('Logged unfinished image-call recovery at %s', (route) => {
+    test.each([false, true])('returns an image instead of the buffered apology, stream=%s', async (stream) => {
+        axios.request.mockImplementationOnce(async config => {
+            const text = incompleteImageEvents().map(event => `data: ${JSON.stringify(event)}\n\n`).join('');
+            return { data: config.responseType === 'stream' ? Readable.from([Buffer.from(text)]) : text };
+        });
+        const success = `data: ${JSON.stringify({ type: 'response.completed', response: { id: 'resp_helper', output: [imageOutput] } })}\n\n`;
+        axios.request.mockResolvedValueOnce({ data: success });
+        const res = await dispatch(request({
+            model: 'gpt-5.6-sol', stream,
+            messages: [{ role: 'user', content: 'Draw a cat.' }], input: 'Draw a cat.'
+        }), route);
+        expect(axios.request).toHaveBeenCalledTimes(2);
+        const [first, second] = axios.request.mock.calls.map(([config]) => config.data);
+        expect(first.reasoning.effort).toBe('medium');
+        expect(second.reasoning.effort).toBeNull();
+        expect(second.tools).toEqual([{ type: 'image_generation' }]);
+        expect(second.tool_choice).toEqual({ type: 'image_generation' });
+        const output = stream ? res.chunks.join('') : JSON.stringify(res.body);
+        expect(output).toContain(imageOutput.result);
+        expect(output).not.toContain('抱歉');
+        if (stream && route.endsWith('/completions')) {
+            expect(output.match(/data:image\/png;base64,/g)).toHaveLength(1);
+            expect(output.match(/Planning image generation/g)).toHaveLength(1);
+        }
+        if (stream && route === '/v1/responses') {
+            const events = output.split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6)));
+            expect(events.filter(event => event.type === 'response.created')).toHaveLength(1);
+            expect(events.filter(event => event.type === 'response.completed')).toHaveLength(1);
+            expect(events.at(-1).response.id).toBe('resp_original');
+            for (let i = 1; i < events.length; i++) expect(events[i].sequence_number).toBeGreaterThan(events[i - 1].sequence_number);
+        }
+        expect(getApiServiceWithFallback).toHaveBeenCalledTimes(1);
+        expect(pool.markProviderUnhealthy).not.toHaveBeenCalled();
+        expectSlotReleased();
+    });
+
+    test.each([false, true])('does not switch credentials or loop if image-only recovery also fails, stream=%s', async (stream) => {
+        axios.request.mockImplementation(async config => {
+            const text = incompleteImageEvents().map(event => `data: ${JSON.stringify(event)}\n\n`).join('');
+            return { data: config.responseType === 'stream' ? Readable.from([Buffer.from(text)]) : text };
+        });
+        const res = await dispatch(request({
+            model: 'gpt-5.6-sol', stream,
+            messages: [{ role: 'user', content: 'Draw a cat.' }], input: 'Draw a cat.'
+        }), route);
+        expect(axios.request).toHaveBeenCalledTimes(2);
+        expect(getApiServiceWithFallback).toHaveBeenCalledTimes(1);
+        expect(pool.markProviderUnhealthy).not.toHaveBeenCalled();
+        if (stream) expect(res.chunks.join('')).toContain('image recovery failed');
+        else expect(res.writeHead).toHaveBeenCalledWith(502, expect.any(Object));
+        expectSlotReleased();
     });
 });
 
