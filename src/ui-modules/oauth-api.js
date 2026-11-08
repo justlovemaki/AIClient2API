@@ -12,8 +12,7 @@ import {
     batchImportCodexTokensStream,
     batchImportGrokCliTokensStream,
     batchImportKiroRefreshTokensStream,
-    importAwsCredentials,
-    batchImportGrokTokensStream
+    importAwsCredentials
 } from '../auth/oauth-handlers.js';
 import { normalizeCodexExternalCredentials } from '../auth/codex-import-normalizer.js';
 
@@ -616,10 +615,8 @@ export async function handleImportCodexExternalCredentials(req, res) {
     }
 }
 
-/**
- * 批量导入 Grok SSO Tokens (流式处理)
- */
-export async function handleBatchImportGrokTokens(req, res) {
+/* PR 751 removed the Grok Web provider; its batch-import endpoint is intentionally absent. */
+/*
     try {
         const body = await getRequestBody(req);
         const { tokens, skipDuplicateCheck } = body;
@@ -691,6 +688,7 @@ export async function handleBatchImportGrokTokens(req, res) {
         return true;
     }
 }
+*/
 
 /**
  * 导入 AWS SSO 凭据用于 Kiro（支持单个或批量导入）

@@ -1354,8 +1354,6 @@ function getFieldOrder(provider) {
             providerType = 'openai-codex-oauth';
         } else if (provider.GROK_CLI_OAUTH_CREDS_FILE_PATH) {
             providerType = 'grok-cli-oauth';
-        } else if (provider.GROK_COOKIE_TOKEN) {
-            providerType = 'grok-web';
         } else if (provider.FORWARD_API_KEY) {
             providerType = 'forward-api';
         }

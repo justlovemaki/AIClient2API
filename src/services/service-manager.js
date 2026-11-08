@@ -588,7 +588,6 @@ export async function getProviderStatus(config, options = {}) {
         'gemini-antigravity': 'ANTIGRAVITY_OAUTH_CREDS_FILE_PATH',
         'openai-iflow': 'IFLOW_TOKEN_FILE_PATH',
         'forward-api': 'FORWARD_BASE_URL',
-        'grok-web': 'GROK_COOKIE_TOKEN',
         'grok-cli-oauth': 'GROK_CLI_OAUTH_CREDS_FILE_PATH',
         'openai-codex-oauth': 'CODEX_OAUTH_CREDS_FILE_PATH'
     };
