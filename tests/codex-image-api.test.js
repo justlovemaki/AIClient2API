@@ -32,7 +32,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
     jest.clearAllMocks();
-    const service = new CodexApiService(config);
+    const service = new CodexApiService({ ...config });
     service.isInitialized = true;
     service.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     getApiServiceWithFallback.mockResolvedValue({
@@ -251,6 +251,44 @@ describe('Explicit image-model effort parity across endpoint payloads', () => {
             }
         }
     );
+});
+
+describe('Image generation monitor hooks', () => {
+    test.each([false, true])('retains the original prompt for hooks after credential retry=%s', async (retry) => {
+        const { getPluginManager } = await import('../src/core/plugin-manager.js');
+        const hook = jest.spyOn(getPluginManager(), 'executeHook').mockResolvedValue(undefined);
+        const random = jest.spyOn(Math, 'random').mockReturnValue(0);
+        const prompt = 'An original image prompt that must survive credential retries.';
+        try {
+            if (retry) {
+                axios.request.mockResolvedValueOnce({ data: `data: ${JSON.stringify({
+                    type: 'error', error: { code: 'insufficient_quota', message: 'Quota exhausted' }
+                })}\n\n` });
+            }
+            const res = await dispatch(request({ prompt }), '/v1/images/generations', {
+                ...config, _monitorRequestId: 'image-hook-test'
+            });
+            expect(res.writeHead).toHaveBeenCalledWith(200, expect.any(Object));
+            expect(hook.mock.calls.filter(([name]) => name === 'onContentGenerated')).toEqual([
+                ['onContentGenerated', expect.objectContaining({
+                    originalRequestBody: {
+                        model: 'gpt-image-2', prompt, n: 1, size: '768x1024', response_format: 'b64_json'
+                    },
+                    model: 'gpt-image-2', isStream: false
+                })]
+            ]);
+            expect(hook.mock.calls.filter(([name]) => name === 'onUnaryResponse')).toEqual([
+                ['onUnaryResponse', expect.objectContaining({
+                    clientResponse: res.body, requestId: 'image-hook-test'
+                })]
+            ]);
+            expect(axios.request).toHaveBeenCalledTimes(retry ? 2 : 1);
+            expect(pool.releaseSlot).toHaveBeenCalledTimes(retry ? 2 : 1);
+        } finally {
+            random.mockRestore();
+            hook.mockRestore();
+        }
+    });
 });
 
 describe('Codex Images API regression (#759)', () => {

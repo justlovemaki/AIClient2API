@@ -147,11 +147,11 @@ async function handleImageGenerationRequest(req, res, currentConfig, providerPoo
     const CONFIG = retryContext?.CONFIG ?? currentConfig;
     let slotProviderType = null;
     let slotUuid = null;
-    let model, n, response_format, size, codexRequestBody, virtualOpenAIRequest;
+    let model, prompt, n, response_format, size, codexRequestBody, virtualOpenAIRequest;
 
     try {
         if (retryContext?.parsedBody) {
-            ({model, n, response_format, size, virtualOpenAIRequest} = retryContext.parsedBody);
+            ({model, prompt, n, response_format, size, virtualOpenAIRequest} = retryContext.parsedBody);
             codexRequestBody = virtualOpenAIRequest;
         } else {
             const body = await getRequestBody(req, { maxBytes: CONFIG.REQUEST_BODY_MAX_BYTES });
@@ -160,7 +160,7 @@ async function handleImageGenerationRequest(req, res, currentConfig, providerPoo
             size = body.size;
             // cap n：至少 1，最多 IMAGE_GEN_MAX_N，非数字降级为 1
             n = Math.min(Math.max(1, parseInt(body.n) || 1), IMAGE_GEN_MAX_N);
-            const prompt = body.prompt;
+            prompt = body.prompt;
 
             if (!SUPPORTED_IMAGE_MODELS.has(model)) {
                 res.writeHead(400, {'Content-Type': 'application/json'});
@@ -345,7 +345,7 @@ async function handleImageGenerationRequest(req, res, currentConfig, providerPoo
                     CONFIG,
                     currentRetry: currentRetry + 1,
                     maxRetries,
-                    parsedBody: {model, n, response_format, size, virtualOpenAIRequest}
+                    parsedBody: {model, prompt, n, response_format, size, virtualOpenAIRequest}
                 });
             } catch (retryError) {
                 logger.error('[Image Generation Retry] Failed to get alternative service:', retryError.message);
