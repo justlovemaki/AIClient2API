@@ -11,7 +11,7 @@ import {configureTLSSidecar, isTLSSidecarEnabledForProvider} from '../../utils/p
 import {MODEL_PROVIDER, formatExpiryLog, normalizeProviderErrorMessage} from '../../utils/common.js';
 import {getProxyConfigForProvider} from '../../utils/proxy-utils.js';
 import {getProviderModels} from '../provider-models.js';
-import {normalizeCodexInstructions, resolveCodexCacheIdentity} from './codex-request-utils.js';
+import {normalizeCodexInstructions, resolveCodexCacheIdentity, resolveCodexReasoningEffort} from './codex-request-utils.js';
 
 const baseModels = getProviderModels(MODEL_PROVIDER.CODEX_API);
 const fastModels = baseModels.map(m => `${m}-fast`);
@@ -556,6 +556,17 @@ export class CodexApiService {
         // upstream cache affinity.
         const cacheIdentity = resolveCodexCacheIdentity(cleanedBody, metadata);
 
+        // 图片请求默认显式发送 null，规避上游可能把主模型 effort 当成图片 complexity 的问题。
+        // 转换器不补默认值，因此这里仍能区分未设置与客户端显式指定的 effort。
+        let reasoningEffort = resolveCodexReasoningEffort(cleanedBody, isImageModel ? null : defaultReasoningEffort);
+        if (isFastModel && !isImageModel && reasoningEffort !== null) {
+            reasoningEffort = defaultReasoningEffort;
+        }
+        if (reasoningEffort === 'minimal') {
+            reasoningEffort = 'none';
+        }
+        delete cleanedBody.reasoning_effort;
+
         // 注意：requestBody 已经去除了 metadata
         const result = {
             ...cleanedBody,
@@ -565,7 +576,7 @@ export class CodexApiService {
             service_tier: cleanedBody.service_tier || defaultServiceTier,
             reasoning: {
                 ...cleanedBody.reasoning,
-                effort: isFastModel ? defaultReasoningEffort : (cleanedBody.reasoning?.effort === 'minimal' ? 'none' : (cleanedBody.reasoning?.effort || defaultReasoningEffort)),
+                effort: reasoningEffort,
                 summary: cleanedBody.reasoning?.summary || 'auto',
             },
             stream,

@@ -11,9 +11,11 @@ jest.mock('../src/utils/proxy-utils.js', () => ({
 
 let CodexApiService;
 let CODEX_DEFAULT_MODEL;
+let CodexConverter;
 
 beforeAll(async () => {
     ({ CodexApiService, CODEX_DEFAULT_MODEL } = await import('../src/providers/openai/codex-core.js'));
+    ({ CodexConverter } = await import('../src/converters/strategies/CodexConverter.js'));
 });
 
 function imageRequest(overrides = {}) {
@@ -61,7 +63,7 @@ describe('Codex image helper model request construction', () => {
         expect(result.instructions).toBe('You are a helpful assistant.');
     });
 
-    test('uses the configured helper for an image -fast model and preserves fast settings', async () => {
+    test('uses the configured helper for an image -fast model with priority but no default effort', async () => {
         const result = await prepare(
             { CODEX_IMAGE_HELPER_MODEL: 'gpt-6-sol' },
             'gpt-image-2-fast',
@@ -72,7 +74,7 @@ describe('Codex image helper model request construction', () => {
         expect(result.model).toBe('gpt-6-sol');
         expect(result.stream).toBe(true);
         expect(result.service_tier).toBe('priority');
-        expect(result.reasoning.effort).toBe('xhigh');
+        expect(result.reasoning.effort).toBeNull();
         expect(result.tools).toEqual([{ type: 'image_generation' }]);
     });
 
@@ -129,5 +131,59 @@ describe('Codex image helper model request construction', () => {
             expect.objectContaining({ type: 'web_search' }),
             expect.objectContaining({ type: 'image_generation' })
         ]));
+    });
+});
+
+describe('Codex reasoning effort defaults and explicit null (#759)', () => {
+    test.each([
+        ['gpt-image-2', null],
+        ['gpt-image-2-fast', null],
+        ['gpt-5.6-sol', 'medium'],
+        ['gpt-5.6-sol-fast', 'xhigh']
+    ])('%s defaults to %s only in the provider', async (model, effort) => {
+        const result = await prepare({}, model);
+        expect(result.reasoning.effort).toBe(effort);
+    });
+
+    test.each(['gpt-image-2', 'gpt-image-2-fast', 'gpt-5.6-sol', 'gpt-5.6-sol-fast'])(
+        '%s preserves explicit null in the provider', async (model) => {
+            const request = imageRequest({ reasoning: { effort: null, summary: 'detailed' } });
+            const result = await prepare({}, model, request);
+            expect(result.reasoning).toEqual({ effort: null, summary: 'detailed' });
+            expect(request.reasoning.effort).toBeNull();
+        }
+    );
+
+    describe.each(['toOpenAIRequestToCodexRequest', 'toOpenAIResponsesToCodexRequest'])('%s', (method) => {
+        test.each([
+            ['absent', {}, undefined, null],
+            ['nested null', { reasoning: { effort: null } }, null, null],
+            ['top-level null', { reasoning_effort: null }, null, null],
+            ['top-level null wins', { reasoning_effort: null, reasoning: { effort: 'high' } }, null, null],
+            ['top-level value wins', { reasoning_effort: 'low', reasoning: { effort: null } }, 'low', 'low'],
+            ['explicit effort', { reasoning: { effort: 'high' } }, 'high', 'high'],
+            ['minimal alias', { reasoning: { effort: 'minimal' } }, 'minimal', 'none']
+        ])('preserves %s through conversion and preparation', async (_label, reasoning, convertedEffort, upstreamEffort) => {
+            const original = {
+                model: 'gpt-image-2',
+                messages: [{ role: 'user', content: 'Draw a cat.' }],
+                input: 'Draw a cat.',
+                ...reasoning
+            };
+            const converted = new CodexConverter()[method](original);
+            expect(converted.reasoning.effort).toBe(convertedEffort);
+            expect(converted).not.toHaveProperty('reasoning_effort');
+
+            const result = await prepare({}, original.model, converted);
+            expect(result.reasoning.effort).toBe(upstreamEffort);
+            // JSON serialization must retain null, not omit it or replace it with a string.
+            expect(JSON.parse(JSON.stringify(result)).reasoning.effort).toBe(upstreamEffort);
+        });
+
+        test.each(['gpt-5.6-sol', 'gpt-5.6-sol-fast'])('preserves text defaults for %s after conversion', async (model) => {
+            const converted = new CodexConverter()[method]({ model, messages: [], input: 'Hello' });
+            const result = await prepare({}, model, converted);
+            expect(result.reasoning.effort).toBe(model.endsWith('-fast') ? 'xhigh' : 'medium');
+        });
     });
 });

@@ -49,6 +49,17 @@ export function resolveCodexCacheIdentity(requestBody, metadata = {}) {
     return {key: `aic2a-${fingerprint}`, source: 'prefix_fingerprint'};
 }
 
+/**
+ * Preserve explicit null (used by image generation); only undefined means absent.
+ * Model-specific defaults belong in the provider, after protocol conversion.
+ */
+export function resolveCodexReasoningEffort(requestBody, defaultEffort) {
+    const effort = requestBody.reasoning_effort !== undefined
+        ? requestBody.reasoning_effort
+        : requestBody.reasoning?.effort;
+    return effort === undefined ? defaultEffort : effort;
+}
+
 export function normalizeCodexInstructions(requestBody) {
     if (!Array.isArray(requestBody.input)) {
         return requestBody;
