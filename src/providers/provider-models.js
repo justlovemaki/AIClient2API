@@ -56,6 +56,10 @@ export const PROVIDER_MODELS = {
     'gemini-antigravity': [
         'gemini-4-argon',
         'gemini-4-argon-high',
+        'gemini-4-carbon',
+        'gemini-4-carbon-high',
+        'gemini-4-hydrogen',
+        'gemini-4-hydrogen-high',
         'gemini-3-flash',
         'gemini-3.5-flash-low',
         'gemini-3.5-flash-high',

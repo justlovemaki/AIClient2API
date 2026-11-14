@@ -41,7 +41,7 @@ const ANTIGRAVITY_FREE_TIER_MODELS = new Set([
 const OAUTH_CLIENT_ID = '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com';
 const OAUTH_CLIENT_SECRET = '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';
 const DEFAULT_USER_AGENT = 'antigravity/2.8.1 darwin/arm64';
-// Argon is available through the CLI/App, not the IDE client.
+// Gemini 4 models use the CLI/App identity, matching the existing Argon integration.
 const ANTIGRAVITY_CLI_USER_AGENT = 'antigravity/cli/1.4.2 darwin/arm64';
 const REFRESH_SKEW = 3000; // 3000秒（50分钟）提前刷新Token
 
@@ -72,6 +72,8 @@ const ANTIGRAVITY_MODELS = getProviderModels(MODEL_PROVIDER.ANTIGRAVITY);
 
 const ANTIGRAVITY_CLIENT_TO_UPSTREAM_MODEL = {
     'gemini-4-argon': 'gemini-4-argon-medium',
+    'gemini-4-carbon': 'gemini-4-carbon-medium',
+    'gemini-4-hydrogen': 'gemini-4-hydrogen-medium',
     'gemini-3.1-pro-high': 'gemini-pro-agent',
     'gemini-3.1-pro-preview': 'gemini-pro-agent',
     'gemini-3.5-flash-high': 'gemini-3.5-flash-low',
@@ -85,6 +87,8 @@ const ANTIGRAVITY_CLIENT_TO_UPSTREAM_MODEL = {
 
 const ANTIGRAVITY_UPSTREAM_TO_CLIENT_MODELS = {
     'gemini-4-argon-medium': ['gemini-4-argon'],
+    'gemini-4-carbon-medium': ['gemini-4-carbon'],
+    'gemini-4-hydrogen-medium': ['gemini-4-hydrogen'],
     'gemini-pro-agent': ['gemini-3.1-pro-high', 'gemini-3.1-pro-preview'],
     'gemini-3.6-flash-low': ['gemini-3.6-flash', 'gemini-3.6-flash-low', 'gemini-3.6-flash-medium'],
     'gemini-3.7-flash-low': ['gemini-3.7-flash', 'gemini-3.7-flash-low', 'gemini-3.7-flash-medium'],
@@ -94,6 +98,10 @@ const ANTIGRAVITY_UPSTREAM_TO_CLIENT_MODELS = {
 const ANTIGRAVITY_CLIENT_MODEL_THINKING_LEVEL = {
     'gemini-4-argon': 'medium',
     'gemini-4-argon-high': 'high',
+    'gemini-4-carbon': 'medium',
+    'gemini-4-carbon-high': 'high',
+    'gemini-4-hydrogen': 'medium',
+    'gemini-4-hydrogen-high': 'high',
     'gemini-pro-agent': 'high',
     'gemini-3.1-pro-high': 'high',
     'gemini-3.1-pro-preview': 'high',
@@ -119,6 +127,18 @@ const ANTIGRAVITY_MODEL_METADATA = {
         thinking: { levels: ['low', 'medium', 'high'] }
     },
     'gemini-4-argon-high': {
+        thinking: { levels: ['low', 'medium', 'high'] }
+    },
+    'gemini-4-carbon-medium': {
+        thinking: { levels: ['low', 'medium', 'high'] }
+    },
+    'gemini-4-carbon-high': {
+        thinking: { levels: ['low', 'medium', 'high'] }
+    },
+    'gemini-4-hydrogen-medium': {
+        thinking: { levels: ['low', 'medium', 'high'] }
+    },
+    'gemini-4-hydrogen-high': {
         thinking: { levels: ['low', 'medium', 'high'] }
     },
     'claude-opus-4-6-thinking': {
@@ -230,7 +250,7 @@ export function resolveAntigravityUpstreamModel(modelName) {
 }
 
 function getAntigravityRequestUserAgent(modelName, userAgent) {
-    if (resolveAntigravityUpstreamModel(modelName).startsWith('gemini-4-argon')) {
+    if (/^gemini-4-(argon|carbon|hydrogen)(?:-|$)/.test(resolveAntigravityUpstreamModel(modelName))) {
         return userAgent?.startsWith('antigravity/cli/') ? userAgent : ANTIGRAVITY_CLI_USER_AGENT;
     }
     return userAgent;

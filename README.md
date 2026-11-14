@@ -185,6 +185,7 @@
       Thanks to APIMart for sponsoring this project! APIMart is a low-cost API platform for AI image &amp; video generation — GPT-Image-2 from $0.006/image, 160+ images per dollar. One async API covers both image and video: submit a task, get an ID, fetch results via polling or callback. Batch tens of thousands of images without timeouts, switch models without changing code. Pay-as-you-go with no monthly fee — <a href="https://go.apimart.ai/gh-aiclient2api">sign up here</a> to get started.
     </td>
   </tr>
+  <!-- RunningHub sponsorship (temporarily hidden)
   <tr>
     <td width="25%" align="center" valign="middle">
       <a href="https://www.runninghub.ai/call-api?source=github">
@@ -198,6 +199,7 @@
       <small style="color: #666;">For RunningHub discounts and free trials, contact <a href="mailto:zhenyuedong@haima.me">zhenyuedong@haima.me</a>.</small>
     </td>
   </tr>
+  -->
   <tr>
     <td width="25%" align="center" valign="middle">
       <img src="static/wechat.png" alt="Sponsor Contact" width="150">

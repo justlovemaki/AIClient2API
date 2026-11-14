@@ -55,22 +55,36 @@ Web UI 通过 `GET /api/provider-models?includeUnavailable=true` 获取 `{ model
 
 若需要放开这些过渡期模型，应结合该账号的 `loadCodeAssist` tier、`fetchAvailableModels` 结果及实际请求结果重新验证，再更新名单及对应测试。本次没有可用的真实账号凭据，未进行上游实测。
 
-## Gemini 4 Argon
+## Gemini 4 Argon / Carbon / Hydrogen
 
-Antigravity 新增两个客户端模型入口，但不加入免费账号白名单：
+Antigravity 提供以下六个客户端模型入口，但不加入免费账号白名单：
 
 | 客户端 ID | 上游请求模型 | thinkingLevel |
 | --- | --- | --- |
 | `gemini-4-argon` | `gemini-4-argon-medium` | `medium` |
 | `gemini-4-argon-high` | `gemini-4-argon-high` | `high` |
+| `gemini-4-carbon` | `gemini-4-carbon-medium` | `medium` |
+| `gemini-4-carbon-high` | `gemini-4-carbon-high` | `high` |
+| `gemini-4-hydrogen` | `gemini-4-hydrogen-medium` | `medium` |
+| `gemini-4-hydrogen-high` | `gemini-4-hydrogen-high` | `high` |
+
+Carbon、Hydrogen 沿用既有 Argon 的 Medium 别名、High 上游 ID、思考等级及 CLI User-Agent 处理方式；这是本地兼容实现，尚未使用真实账号核实其上游 ID 和套餐授权。
 
 模型发现时把上游 Medium ID 展示为基础入口；High ID 保持不变。基础入口及 High 都参与静态后备目录、原生模型列表、自动模式和 Playground 的账号池模型筛选。
 
-[官方模型表](https://antigravity.google/docs/models/)注明 Argon 面向非试用 Google AI Pro、Ultra 和 Enterprise，不支持 Free / Plus，也不支持 Antigravity IDE；另见[官方发布说明](https://antigravity.google/blog/gemini-4-argon-in-google-antigravity/)。因此模型目录请求和 Argon 的流式/非流式请求使用 CLI User-Agent，其他模型请求和账号元数据请求保持原有标识。基础别名到 Medium 的映射参考[社区 Cloud Code 适配](https://github.com/1jehuang/jcode/pull/1834)，不把基础别名直接作为未经规范化的上游 ID 发送。
+[官方模型表](https://antigravity.google/docs/models/)注明 Argon 面向非试用 Google AI Pro、Ultra 和 Enterprise，不支持 Free / Plus，也不支持 Antigravity IDE；另见[官方发布说明](https://antigravity.google/blog/gemini-4-argon-in-google-antigravity/)。因此模型目录请求和上述 Gemini 4 模型的流式/非流式请求使用 CLI User-Agent，其他模型请求和账号元数据请求保持原有标识。基础别名到 Medium 的映射参考[社区 Cloud Code 适配](https://github.com/1jehuang/jcode/pull/1834)，不把基础别名直接作为未经规范化的上游 ID 发送。
 
 本地不会判定付费账号是否仍处于试用或是否具备具体的 Argon 授权，最终可用性由上游决定。本次仅通过模拟传输验证，尚未使用真实账号联调。
 
-## 回归验证
+## Gemini 4 回归验证
+
+```bash
+npm test -- --runInBand tests/antigravity-gemini4.test.js tests/antigravity-quota-family.test.js tests/claude-thinking-config.test.js
+```
+
+覆盖六个入口的模型注册、别名规范化、思考等级、流式/非流式请求与 CLI 标识、模型发现和静态后备目录，以及免费账号限制。全部使用模拟传输，不代表真实上游调用验证。
+
+## 原策略回归验证（历史测试命令）
 
 ```bash
 npm test -- --runInBand tests/antigravity-models.test.js tests/antigravity-argon.test.js tests/antigravity-custom-models.test.js tests/model-availability-ui.test.js
