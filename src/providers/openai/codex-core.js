@@ -26,7 +26,7 @@ import {
 const baseModels = getProviderModels(MODEL_PROVIDER.CODEX_API);
 const fastModels = baseModels.map(m => `${m}-fast`);
 const CODEX_MODELS = [...new Set([...baseModels, ...fastModels])];
-const CODEX_VERSION = '0.166.0';
+const CODEX_VERSION = '0.170.0';
 export const CODEX_DEFAULT_MODEL = 'gpt-5.6-sol';
 export const IMAGE_MODELS = new Set(['gpt-image-2']);
 

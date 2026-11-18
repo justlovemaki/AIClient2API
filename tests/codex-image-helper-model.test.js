@@ -34,15 +34,32 @@ async function prepare(config, model = 'gpt-image-2', request = imageRequest(), 
 }
 
 describe('Codex image helper model request construction', () => {
-    test('uses Codex client version 0.166.0 in upstream headers', () => {
+    test('uses Codex client version 0.170.0 in upstream headers', () => {
         const headers = new CodexApiService({}).buildHeaders('cache-key', true);
 
-        expect(headers.version).toBe('0.166.0');
-        expect(headers['user-agent']).toContain('codex-tui/0.166.0');
-        expect(headers['user-agent']).toContain('codex-tui; 0.166.0');
+        expect(headers.version).toBe('0.170.0');
+        expect(headers['user-agent']).toContain('codex-tui/0.170.0');
+        expect(headers['user-agent']).toContain('codex-tui; 0.170.0');
     });
 
-    test('defaults to gpt-5.6-sol, publishes gpt-6.1-terra, and removes unsupported gpt-5.5', async () => {
+    test.each(['gpt-6.2-sol', 'gpt-6.2-astra'])('publishes %s and its fast variant', async (model) => {
+        const models = await new CodexApiService({}).listModels();
+        const ids = models.data.map(entry => entry.id);
+
+        expect(ids).toContain(model);
+        expect(ids).toContain(`${model}-fast`);
+    });
+
+    test.each(['gpt-6.2-sol', 'gpt-6.2-astra'])('preserves %s in normal and fast requests', async (model) => {
+        const normal = await prepare({}, model, imageRequest());
+        const fast = await prepare({}, `${model}-fast`, imageRequest());
+
+        expect(normal.model).toBe(model);
+        expect(fast.model).toBe(model);
+        expect(fast.service_tier).toBe('priority');
+    });
+
+    test('defaults to gpt-5.6-sol, publishes gpt-6.1-terra, and removes unsupported gpt-5.6-luna', async () => {
         const models = await new CodexApiService({}).listModels();
         const ids = models.data.map(model => model.id);
 
@@ -51,8 +68,8 @@ describe('Codex image helper model request construction', () => {
         expect(ids).toContain('gpt-5.6-sol-fast');
         expect(ids).toContain('gpt-6.1-terra');
         expect(ids).toContain('gpt-6.1-terra-fast');
-        expect(ids).not.toContain('gpt-5.5');
-        expect(ids).not.toContain('gpt-5.5-fast');
+        expect(ids).not.toContain('gpt-5.6-luna');
+        expect(ids).not.toContain('gpt-5.6-luna-fast');
     });
 
     test('uses the configured helper model for a normal image model', async () => {

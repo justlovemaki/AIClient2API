@@ -564,18 +564,18 @@ function renderRoutingExamples(providerConfigs) {
         'gemini-antigravity': 'gemini-3-flash',
         'claude-custom': 'claude-sonnet-4-5',
         'claude-kiro-oauth': 'claude-sonnet-4-5',
-        'openai-custom': 'gpt-5.5',
-        'atlascloud': 'gpt-5.5',
-        'qiniu': 'gpt-5.5',
+        'openai-custom': 'gpt-5.6-luna',
+        'atlascloud': 'gpt-5.6-luna',
+        'qiniu': 'gpt-5.6-luna',
         'apimart': 'gpt-5',
-        'fenno': 'gpt-5.5',
+        'fenno': 'gpt-5.6-luna',
         'openai-qwen-oauth': 'qwen3-coder-plus',
         'openai-iflow': 'qwen3-max',
         'openai-codex-oauth': 'gpt-5',
-        'openaiResponses-custom': 'gpt-5.5',
+        'openaiResponses-custom': 'gpt-5.6-luna',
         'grok-web': 'grok-4.3',
         'grok-cli-oauth': 'grok-4.3',
-        'forward-api': 'gpt-5.5'
+        'forward-api': 'gpt-5.6-luna'
     };
 
     providerConfigs.forEach(config => {
