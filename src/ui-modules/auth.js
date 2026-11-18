@@ -111,20 +111,27 @@ function parseRequestBody(req, maxBytes = 10 * 1024) {
             return reject(Object.assign(new Error('Request body too large'), { code: 'BODY_TOO_LARGE' }));
         }
 
-        let body = '';
+        const chunks = [];
         let received = 0;
+        let settled = false;
 
         req.on('data', chunk => {
+            if (settled) return;
             received += chunk.length;
             if (received > maxBytes) {
+                settled = true;
                 // 超限：立即销毁连接，不再累积数据
                 req.destroy();
                 return reject(Object.assign(new Error('Request body too large'), { code: 'BODY_TOO_LARGE' }));
             }
-            body += chunk.toString();
+            chunks.push(chunk);
         });
 
         req.on('end', () => {
+            if (settled) return;
+            settled = true;
+            // UTF-8 字符可能跨 chunk，必须收齐原始字节后再解码。
+            const body = Buffer.concat(chunks).toString('utf8');
             try {
                 resolve(body.trim() ? JSON.parse(body) : {});
             } catch (error) {
@@ -132,7 +139,11 @@ function parseRequestBody(req, maxBytes = 10 * 1024) {
             }
         });
 
-        req.on('error', reject);
+        req.on('error', error => {
+            if (settled) return;
+            settled = true;
+            reject(error);
+        });
     });
 }
 

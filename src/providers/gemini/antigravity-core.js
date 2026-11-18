@@ -1130,6 +1130,22 @@ function ensureRolesInContents(requestBody, modelName) {
                 normalizeAntigravityTextParts(content.parts);
             }
         });
+
+        // Antigravity 不接受以 model 回合结尾的请求，兼容 Continue / assistant prefill。
+        const lastTurn = requestBody.contents[requestBody.contents.length - 1];
+        if (lastTurn?.role === 'model') {
+            // 未完成的工具调用需要客户端先提交结果，不能用续写指令伪装成工具响应。
+            if (lastTurn.parts?.some(part => part?.functionCall)) {
+                const error = new Error('[Antigravity] The final model turn contains a functionCall. Submit the corresponding functionResponse before requesting more output.');
+                error.statusCode = 400;
+                error.skipErrorCount = true;
+                throw error;
+            }
+            requestBody.contents.push({
+                role: 'user',
+                parts: [{ text: 'Continue exactly where the previous message left off. Do not repeat any earlier text.' }]
+            });
+        }
     }
 
     return requestBody;

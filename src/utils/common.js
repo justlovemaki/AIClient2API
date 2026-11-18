@@ -732,7 +732,7 @@ export function getClientIp(req, config = {}) {
  */
 export function getRequestBody(req, options = {}) {
     return new Promise((resolve, reject) => {
-        let body = '';
+        const chunks = [];
         let receivedBytes = 0;
         let settled = false;
         const maxBytes = Number(options.maxBytes) > 0 ? Number(options.maxBytes) : DEFAULT_REQUEST_BODY_MAX_BYTES;
@@ -776,11 +776,13 @@ export function getRequestBody(req, options = {}) {
                 rejectTooLarge(error);
                 return;
             }
-            body += chunk.toString();
+            chunks.push(chunk);
         });
         req.on('end', () => {
             if (settled) return;
             settled = true;
+            // UTF-8 字符可能跨 chunk，必须收齐原始字节后再解码。
+            const body = Buffer.concat(chunks).toString('utf8');
             if (!body) {
                 return resolve({});
             }
