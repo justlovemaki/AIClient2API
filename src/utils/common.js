@@ -336,6 +336,7 @@ async function hasAlternateAfterQuotaExhaustion(providerPoolManager, config, mod
 }
 
 function applyCredentialCooldown(error, config, providerPoolManager, providerType, pooluuid, logPrefix, model = null) {
+    if (error?.stopCredentialRetry) return { recoveryTime: null, credentialMarkedUnhealthy: false, quotaExhausted: false };
     const quotaExhausted = error?.quotaExhausted === true;
     const quotaRecoveryTime = error?.quotaRecoveryTime instanceof Date && !Number.isNaN(error.quotaRecoveryTime.getTime())
         ? error.quotaRecoveryTime
@@ -1540,7 +1541,7 @@ export async function handleStreamRequest(res, service, model, requestBody, from
         
         // 凭证已被标记为不健康后，尝试切换到新凭证重试
         // 不再依赖状态码判断，只要凭证被标记不健康且可以重试，就尝试切换
-        if (credentialMarkedUnhealthy && quotaHasAlternate && currentRetry < maxRetries && providerPoolManager && CONFIG) {
+        if (!error.stopCredentialRetry && credentialMarkedUnhealthy && quotaHasAlternate && currentRetry < maxRetries && providerPoolManager && CONFIG) {
             // 额度耗尽已经知道要换号，不再随机空等。其它凭证切换仍保留 10 秒内抖动。
             const randomDelay = cooldown.quotaExhausted ? 0 : Math.floor(Math.random() * 10000);
             logger.info(`[Stream Retry] Credential marked unhealthy. Waiting ${randomDelay}ms before retry ${currentRetry + 1}/${maxRetries} with different credential...`);
@@ -1828,7 +1829,7 @@ export async function handleUnaryRequest(res, service, model, requestBody, fromP
         
         // 凭证已被标记为不健康后，尝试切换到新凭证重试
         // 不再依赖状态码判断，只要凭证被标记不健康且可以重试，就尝试切换
-        if (credentialMarkedUnhealthy && quotaHasAlternate && currentRetry < maxRetries && providerPoolManager && CONFIG) {
+        if (!error.stopCredentialRetry && credentialMarkedUnhealthy && quotaHasAlternate && currentRetry < maxRetries && providerPoolManager && CONFIG) {
             const randomDelay = cooldown.quotaExhausted ? 0 : Math.floor(Math.random() * 10000);
             logger.info(`[Unary Retry] Credential marked unhealthy. Waiting ${randomDelay}ms before retry ${currentRetry + 1}/${maxRetries} with different credential...`);
             if (randomDelay > 0) await new Promise(resolve => setTimeout(resolve, randomDelay));

@@ -16,6 +16,12 @@ import {
 import { broadcastEvent } from '../ui-modules/event-broadcast.js';
 import { ENDPOINT_TYPE } from '../utils/common.js';
 import { quotaFamilyForModel } from './gemini/antigravity-quota-family.js';
+import { isAntigravityPoolPaused } from './gemini/antigravity-pool-guard.js';
+
+function isProviderPoolPaused(providerType) {
+    return isAntigravityPoolPaused() && (providerType === MODEL_PROVIDER.ANTIGRAVITY ||
+        providerType?.startsWith(`${MODEL_PROVIDER.ANTIGRAVITY}-`));
+}
 
 function getCustomModelAliasesForProvider(config, providerType) {
     const customModels = Array.isArray(config?.customModels) ? config.customModels : [];
@@ -470,6 +476,7 @@ export class ProviderPoolManager {
      * @private
      */
     async _refreshNodeToken(providerType, providerStatus, force = false) {
+        if (isProviderPoolPaused(providerType)) return;
         const config = providerStatus.config;
         
         // 检查刷新次数是否已达上限（最大5次）
@@ -537,6 +544,7 @@ export class ProviderPoolManager {
             }
 
         } catch (error) {
+            if (error.stopCredentialRetry) return;
             this._log('error', `Token refresh failed for node ${this._getDisplayName(config)}: ${error.message}`);
             
             // 记录错误信息
@@ -1037,6 +1045,7 @@ export class ProviderPoolManager {
      * @private
      */
     async _doSelectProvider(providerType, requestedModel, options) {
+        if (isProviderPoolPaused(providerType)) return null;
         const availableProviders = this.providerStatus[providerType] || [];
         
         // 检查并恢复已到恢复时间的提供商
@@ -2257,6 +2266,7 @@ export class ProviderPoolManager {
             }
             
             for (const providerStatus of this.providerStatus[providerType]) {
+                if (isProviderPoolPaused(providerType)) break;
                 const providerConfig = providerStatus.config;
 
                 // 如果提供商有 scheduledRecoveryTime 且未到恢复时间，跳过健康检查
@@ -2310,6 +2320,7 @@ export class ProviderPoolManager {
                     }
 
                 } catch (error) {
+                    if (error.stopCredentialRetry) continue;
                     this._log('error', `Health check for ${this._getDisplayName(providerConfig)} (${providerType}) failed: ${error.message}`);
                     // If a health check fails, mark it unhealthy, which will update error count and lastErrorTime
                     this.markProviderUnhealthy(providerType, providerConfig, error.message);
@@ -2371,6 +2382,7 @@ export class ProviderPoolManager {
         let failCount = 0;
         
         for (const { providerType, provider, uuid, customName } of providersToCheck) {
+            if (isProviderPoolPaused(providerType)) continue;
             const providerCheckStart = Date.now();
             const baseProviderType = this._getBaseProviderType(providerType);
             const checkModelName = provider.config.checkModelName || 
@@ -2396,6 +2408,7 @@ export class ProviderPoolManager {
                     this.markProviderHealthy(providerType, provider.config, false, result.modelName);
                 }
             } catch (error) {
+                if (error.stopCredentialRetry) continue;
                 const checkDuration = Date.now() - providerCheckStart;
                 failCount++;
                 this._log('error', `[ScheduledHealthCheck] ${displayName} (${providerType}) EXCEPTION: ${error.message} (${checkDuration}ms)`);
@@ -2556,6 +2569,7 @@ export class ProviderPoolManager {
                 return { success: true, modelName, errorMessage: null };
             } catch (error) {
                 clearTimeout(timeoutId);
+                if (error.stopCredentialRetry) throw error;
                 lastError = error;
             }
         }

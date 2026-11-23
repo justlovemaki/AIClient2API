@@ -5,8 +5,21 @@
  */
 
 export function isQuotaExhaustedError(error) {
-    const entries = getErrorEntries(error);
-    return entries.some(entry => entry?.error?.status === 'RESOURCE_EXHAUSTED');
+    return getErrorEntries(error).some(entry => {
+        const body = entry?.error;
+        return body?.status === 'RESOURCE_EXHAUSTED' && Array.isArray(body.details) && body.details.some(detail =>
+            detail?.reason === 'QUOTA_EXHAUSTED' || detail?.['@type'] === 'type.googleapis.com/google.rpc.QuotaFailure' ||
+            Boolean(detail?.metadata?.quotaResetTimeStamp || detail?.metadata?.quotaResetDelay)
+        );
+    });
+}
+
+export function isTosViolationError(error) {
+    return getErrorEntries(error).some(entry => {
+        const body = entry?.error;
+        return body?.reason === 'TOS_VIOLATION' || body?.status === 'TOS_VIOLATION' ||
+            (Array.isArray(body?.details) && body.details.some(detail => detail?.reason === 'TOS_VIOLATION'));
+    });
 }
 
 export function getQuotaRecoveryTime(error, now = Date.now()) {
