@@ -796,7 +796,7 @@ export class GitHubCopilotApiServiceAdapter extends ApiServiceAdapter {
 }
 
 // 注册所有内置适配器
-registerAdapter(MODEL_PROVIDER.APIMART, OpenAIApiServiceAdapter);
+// registerAdapter(MODEL_PROVIDER.APIMART, OpenAIApiServiceAdapter);
 // registerAdapter(MODEL_PROVIDER.QINIU, OpenAIApiServiceAdapter);
 // registerAdapter(MODEL_PROVIDER.FENNO, OpenAIApiServiceAdapter);
 // registerAdapter(MODEL_PROVIDER.ATLASCLOUD, OpenAIApiServiceAdapter);

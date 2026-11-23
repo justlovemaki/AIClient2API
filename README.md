@@ -175,6 +175,7 @@
       <a href="https://www.axisnow.io">AxisNow</a> protects and accelerates websites and APIs while delivering an optimized access experience across mainland China and the rest of the world. Through its client SDK, AxisNow extends acceleration and security capabilities to native/mobile apps — <strong>self-hosted private CDN｜subscription-based DDoS-protected CDN｜independently controlled, flexibly composable CDN networks.</strong>
     </td>
   </tr>
+  <!-- APIMart sponsorship (temporarily hidden)
   <tr>
     <td width="25%" align="center" valign="middle">
       <a href="https://go.apimart.ai/gh-aiclient2api">
@@ -185,6 +186,7 @@
       Thanks to APIMart for sponsoring this project! APIMart is a low-cost API platform for AI image &amp; video generation — GPT-Image-2 from $0.006/image, 160+ images per dollar. One async API covers both image and video: submit a task, get an ID, fetch results via polling or callback. Batch tens of thousands of images without timeouts, switch models without changing code. Pay-as-you-go with no monthly fee — <a href="https://go.apimart.ai/gh-aiclient2api">sign up here</a> to get started.
     </td>
   </tr>
+  -->
   <tr>
     <td width="25%" align="center" valign="middle">
       <a href="https://www.runninghub.ai/call-api?source=github">

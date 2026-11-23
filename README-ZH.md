@@ -175,6 +175,7 @@
       <a href="https://www.axisnow.io/zh">AxisNow</a> 保护并加速网站与 API，兼顾中国大陆及全球的访问体验，并通过客户端 SDK，将加速与安全能力延伸至原生/移动 App — <strong>自建私有部署 CDN｜订阅式高防 CDN｜自主可控、灵活组合的 CDN 网络。</strong>
     </td>
   </tr>
+  <!-- APIMart 赞助信息（暂时隐藏）
   <tr>
     <td width="25%" align="center" valign="middle">
       <a href="https://go.apimart.ai/gh-aiclient2api">
@@ -185,6 +186,7 @@
       感谢 APIMart 赞助了本项目！APIMart 是专注 AI 图片/视频生成的低价 API 平台，GPT-Image-2 低至 $0.006/张，1 美元可出图 160+ 张。图片、视频一套异步 API 通吃，提交任务拿 ID、回调取结果，跑批万张不超时、换模型不改代码。按量付费、无月费，通过<a href="https://go.apimart.ai/gh-aiclient2api">此注册链接</a>注册即可开用。
     </td>
   </tr>
+  -->
   <tr>
     <td width="25%" align="center" valign="middle">
       <a href="https://www.runninghub.ai/call-api?source=github">
