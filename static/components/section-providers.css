@@ -1,14 +1,4 @@
 /* 统计卡片 */
-.codex-quota-badge {
-    display: inline-block;
-    margin-left: 8px;
-    padding: 2px 7px;
-    border-radius: 999px;
-    background: var(--primary-10);
-    color: var(--primary-color);
-    font-size: 11px;
-    white-space: nowrap;
-}
 .providers-handoff-panel {
     background: linear-gradient(135deg, var(--primary-10) 0%, var(--bg-primary) 58%, var(--bg-secondary) 100%);
     border: 1px solid var(--primary-20);

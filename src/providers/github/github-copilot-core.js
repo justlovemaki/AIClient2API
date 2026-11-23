@@ -177,11 +177,12 @@ export class GitHubCopilotApiService {
 
         const snapshot = quotaSnapshots[quotaType];
         const isUnlimited = snapshot.isUnlimitedEntitlement === true || snapshot.entitlementRequests === -1;
-        const remainingPercentage = Number(snapshot.remainingPercentage);
+        const remainingPercentage = snapshot.remainingPercentage == null ? NaN : Number(snapshot.remainingPercentage);
+        const usedRequests = snapshot.usedRequests == null ? NaN : Number(snapshot.usedRequests);
         const quota = {
             available: true,
             quotaType,
-            usedRequests: Number(snapshot.usedRequests) || 0,
+            usedRequests: Number.isFinite(usedRequests) ? usedRequests : null,
             entitlementRequests: Number(snapshot.entitlementRequests),
             remainingPercentage: isUnlimited || !Number.isFinite(remainingPercentage)
                 ? null

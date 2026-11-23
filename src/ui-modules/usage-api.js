@@ -18,16 +18,6 @@ function sendJson(res, statusCode, payload) {
     res.end(JSON.stringify(payload));
 }
 
-const supportedProviders = [
-    MODEL_PROVIDER.KIRO_API, 
-    MODEL_PROVIDER.GEMINI_CLI, 
-    MODEL_PROVIDER.ANTIGRAVITY, 
-    MODEL_PROVIDER.CODEX_API, 
-    MODEL_PROVIDER.GROK_WEB,
-    MODEL_PROVIDER.GROK_CLI
-];
-
-
 /**
  * 获取所有支持用量查询的提供商的用量信息
  * @param {Object} currentConfig - 当前配置
@@ -41,7 +31,7 @@ async function getAllProvidersUsage(currentConfig, providerPoolManager) {
     };
 
     // 并发获取所有提供商的用量数据
-    const usagePromises = supportedProviders.map(async (providerType) => {
+    const usagePromises = usageService.getSupportedProviders().map(async (providerType) => {
         try {
             const providerUsage = await getProviderTypeUsage(providerType, currentConfig, providerPoolManager);
             return { providerType, data: providerUsage, success: true };
@@ -332,7 +322,7 @@ async function updateSingleInstanceInCache(providerType, uuid, instanceResult) {
 export async function handleGetSupportedProviders(req, res) {
     try {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(supportedProviders));
+        res.end(JSON.stringify(usageService.getSupportedProviders()));
         return true;
     } catch (error) {
         logger.error('[Usage API] Failed to get supported providers:', error);
@@ -362,7 +352,13 @@ export async function handleGetUsage(req, res, currentConfig, providerPoolManage
             const cachedData = await readUsageCache();
             if (cachedData) {
                 logger.info('[Usage API] Returning cached usage data');
-                usageResults = { ...cachedData, fromCache: true };
+                usageResults = { ...cachedData, providers: { ...cachedData.providers }, fromCache: true };
+                // 补齐升级前的缓存，保留其他提供商已经缓存的用量。
+                const copilot = MODEL_PROVIDER.GITHUB_COPILOT;
+                if (!usageResults.providers[copilot] && loadProviderList(copilot, currentConfig, providerPoolManager).length > 0) {
+                    usageResults.providers[copilot] = await getProviderTypeUsage(copilot, currentConfig, providerPoolManager);
+                    await writeUsageCache({ ...cachedData, providers: usageResults.providers });
+                }
                 // 使用最新的格式化逻辑处理缓存的原始数据
                 reformatUsageResults(usageResults);
             }

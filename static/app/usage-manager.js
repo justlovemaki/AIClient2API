@@ -411,7 +411,8 @@ function createInstanceUsageCard(instance, providerType) {
     const displayName = user.email || instance.name || instance.uuid;
     const providerDisplayName = getProviderDisplayName(providerType);
     const resetAvailableCount = summary.resetAvailableCount ?? 0;
-    const canResetQuota = instance.success && summary.resetAvailableCount !== undefined;
+    const canResetQuota = providerType === 'openai-codex-oauth' && instance.success && summary.resetAvailableCount !== undefined;
+    const quotaStateLabel = getQuotaStateLabel(summary);
     const codexResetButtonLabel = `${t('usage.codex.resetActionShort')} ${t('usage.codex.resetCredits', { count: resetAvailableCount })}`;
 
     // 使用后端返回的 planClass，如果缺失则兜底
@@ -425,7 +426,9 @@ function createInstanceUsageCard(instance, providerType) {
                 ${summary.plan ? `<span class="collapsed-plan-badge ${planClass}">${summary.plan}</span>` : ''}
                 ${instance.success ? '<i class="fas fa-check-circle status-success"></i>' : '<i class="fas fa-times-circle status-error"></i>'}
             </div>
-            ${instance.success ? `
+            ${instance.success && quotaStateLabel ? `
+            <div class="collapsed-summary-row collapsed-summary-usage-row"><span>${quotaStateLabel}</span></div>
+            ` : instance.success ? `
             <div class="collapsed-summary-row collapsed-summary-usage-row">
                 <div class="collapsed-progress-bar ${summary.status}"><div class="progress-fill" style="width: ${summary.usedPercent}%"></div></div>
                 <span class="collapsed-percent">
@@ -494,13 +497,21 @@ function renderUsageDetails(usage) {
     container.className = 'usage-details';
 
     const { summary, items } = usage;
-    
-    if (summary?.usedPercent !== undefined) {
+    const quotaStateLabel = getQuotaStateLabel(summary);
+    if (quotaStateLabel) {
+        const state = document.createElement('div');
+        state.className = 'usage-section';
+        const label = summary.quotaType ? `${getCopilotQuotaLabel(summary.quotaType)}：` : '';
+        state.textContent = label + quotaStateLabel;
+        container.appendChild(state);
+    }
+
+    if (typeof summary?.usedPercent === 'number') {
         const total = document.createElement('div');
         total.className = 'usage-section total-usage';
         total.innerHTML = `
             <div class="total-usage-header">
-                <span class="total-label"><i class="fas fa-chart-pie"></i> <span>${t('usage.card.totalUsage')}</span></span>
+                <span class="total-label"><i class="fas fa-chart-pie"></i> <span>${summary.quotaType ? getCopilotQuotaLabel(summary.quotaType) : t('usage.card.totalUsage')}</span></span>
                 <span class="total-value">${summary.usedPercent.toFixed(1)}%</span>
             </div>
             <div class="progress-bar ${summary.status}"><div class="progress-fill" style="width: ${summary.usedPercent}%"></div></div>
@@ -516,10 +527,11 @@ function renderUsageDetails(usage) {
         breakdown.className = 'usage-section usage-breakdown-compact';
         items.forEach(item => {
             const val = item.unit === 'percent' ? `${item.percent.toFixed(1)}%` : `${formatNumber(item.used)} / ${formatNumber(item.limit)}`;
+            const label = summary?.quotaType ? t('usage.copilot.requestsUsed') : item.label;
             const itemEl = document.createElement('div');
             itemEl.className = 'breakdown-item-compact';
             itemEl.innerHTML = `
-                <div class="breakdown-header-compact"><span class="breakdown-name">${item.label}</span><span class="breakdown-usage">${val}</span></div>
+                <div class="breakdown-header-compact"><span class="breakdown-name">${label}</span><span class="breakdown-usage">${val}</span></div>
                 <div class="progress-bar-small ${item.status}"><div class="progress-fill" style="width: ${item.percent}%"></div></div>
                 ${item.resetAt ? `<div class="extra-usage-info reset-time"><i class="fas fa-history"></i> ${formatDate(item.resetAt)}</div>` : ''}
             `;
@@ -529,6 +541,19 @@ function renderUsageDetails(usage) {
     }
 
     return container;
+}
+
+function getQuotaStateLabel(summary) {
+    if (summary?.quotaState === 'unavailable') return t('usage.copilot.unavailable');
+    if (summary?.quotaState === 'unlimited') return t('usage.copilot.unlimited');
+    return '';
+}
+
+function getCopilotQuotaLabel(type) {
+    if (type === 'premium_interactions') return t('usage.copilot.premiumInteractions');
+    if (type === 'chat') return t('usage.copilot.chat');
+    if (type === 'completions') return t('usage.copilot.completions');
+    return t('usage.card.totalUsage');
 }
 
 function getProviderDisplayName(type) {

@@ -19,6 +19,7 @@ export class UsageService {
             [MODEL_PROVIDER.GEMINI_CLI]: this.getGeminiUsage.bind(this),
             [MODEL_PROVIDER.ANTIGRAVITY]: this.getAntigravityUsage.bind(this),
             [MODEL_PROVIDER.CODEX_API]: this.getCodexUsage.bind(this),
+            [MODEL_PROVIDER.GITHUB_COPILOT]: this._getRawUsageFromAdapter.bind(this, MODEL_PROVIDER.GITHUB_COPILOT),
             [MODEL_PROVIDER.GROK_WEB]: this.getGrokUsage.bind(this),
             [MODEL_PROVIDER.GROK_CLI]: this.getGrokCliUsage.bind(this),
         };
@@ -29,6 +30,7 @@ export class UsageService {
             [MODEL_PROVIDER.GEMINI_CLI]: formatGeminiUsage,
             [MODEL_PROVIDER.ANTIGRAVITY]: formatAntigravityUsage,
             [MODEL_PROVIDER.CODEX_API]: formatCodexUsage,
+            [MODEL_PROVIDER.GITHUB_COPILOT]: formatCopilotUsage,
             [MODEL_PROVIDER.GROK_WEB]: formatGrokUsage,
             [MODEL_PROVIDER.GROK_CLI]: formatGrokCliUsage,
         };
@@ -675,6 +677,35 @@ export function formatGrokCliUsage(usageData) {
         items,
         raw: usageData
     };
+}
+
+export function formatCopilotUsage(quota) {
+    const { available, quotaType, isUnlimited, usedRequests, entitlementRequests, usedPercentage, resetDate } = quota;
+    if (!available) return { summary: { quotaState: 'unavailable' }, items: [], raw: quota };
+
+    const resetAt = formatTimestamp(resetDate);
+    const hasCounts = Number.isFinite(usedRequests) && usedRequests >= 0 &&
+        Number.isFinite(entitlementRequests) && entitlementRequests > 0;
+    const ratio = Number.isFinite(usedPercentage) ? usedPercentage :
+        hasCounts ? usedRequests / entitlementRequests * 100 : null;
+    const percent = !isUnlimited && Number.isFinite(ratio) ? Math.min(100, Math.max(0, ratio)) : null;
+    const summary = {
+        quotaState: isUnlimited ? 'unlimited' : percent === null ? 'unavailable' : 'metered',
+        quotaType,
+        usedPercent: percent,
+        status: percent === null ? 'normal' : getStatus(percent),
+        unit: 'percent',
+        resetAt
+    };
+    const items = percent === null ? [] : [{
+        id: quotaType,
+        percent,
+        used: usedRequests,
+        limit: entitlementRequests,
+        unit: hasCounts ? 'requests' : 'percent',
+        status: summary.status
+    }];
+    return { summary, items, raw: quota };
 }
 
 /**
