@@ -172,8 +172,8 @@ export function applySystemPromptReplacements(content, replacements = []) {
     }
     let newContent = content;
     for (const replacement of replacements) {
-        if (replacement.old !== undefined && replacement.new !== undefined) {
-            if (typeof replacement.old === 'string') {
+        if (replacement?.old !== undefined && replacement.new !== undefined) {
+            if (typeof replacement.old === 'string' && replacement.old.length > 0) {
                 // 简单字符串全量替换
                 newContent = newContent.split(replacement.old).join(replacement.new);
             } else if (replacement.old instanceof RegExp || (typeof replacement.old === 'object' && replacement.old !== null)) {

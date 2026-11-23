@@ -1,7 +1,8 @@
-import { API_ACTIONS, MODEL_PROTOCOL_PREFIX } from '../../utils/common.js';
 import logger from '../../utils/logger.js';
 import { ProviderStrategy } from '../../utils/provider-strategy.js';
 import { applySystemPromptReplacements } from '../../converters/utils.js';
+import { MODEL_PROTOCOL_PREFIX } from '../../utils/constants.js';
+import { clearRequestSystemPrompts } from '../../utils/system-prompt-replacements.js';
 
 /**
  * Grok provider strategy implementation.
@@ -30,23 +31,28 @@ class GrokStrategy extends ProviderStrategy {
         }
 
         const filePromptContent = config.SYSTEM_PROMPT_CONTENT;
-        if (filePromptContent === null) {
+        if (filePromptContent == null) {
             return requestBody;
         }
 
-        // Grok web interface combines system prompt into message
-        // Here we can prepend it if needed, or handle it during request conversion.
-        // Since requestBody already contains the converted message, we might need to prepend it here.
-        
-        // Apply system prompt replacements to file prompt content
         const finalFilePrompt = applySystemPromptReplacements(filePromptContent, config.SYSTEM_PROMPT_REPLACEMENTS);
-
-        const existingMessage = requestBody.message || "";
-        const newSystemText = config.SYSTEM_PROMPT_MODE === 'append'
-            ? `${existingMessage}\n\nSystem: ${finalFilePrompt}`
-            : `System: ${finalFilePrompt}\n\n${existingMessage}`;
-
-        requestBody.message = newSystemText;
+        const append = config.SYSTEM_PROMPT_MODE === 'append';
+        if (Array.isArray(requestBody.messages) && (requestBody.messages.length > 0 || !requestBody.message)) {
+            // Grok rebuilds `message` from `messages` when available.
+            const fileMessage = { role: 'system', content: finalFilePrompt };
+            if (append) {
+                requestBody.messages.push(fileMessage);
+            } else {
+                clearRequestSystemPrompts(requestBody, MODEL_PROTOCOL_PREFIX.GROK);
+                requestBody.messages.unshift(fileMessage);
+            }
+        } else {
+            // A flat message has no role boundaries; don't guess which text to remove.
+            const existingMessage = requestBody.message || '';
+            requestBody.message = append
+                ? `${existingMessage}\n\nSystem: ${finalFilePrompt}`
+                : `System: ${finalFilePrompt}\n\n${existingMessage}`;
+        }
         logger.info(`[System Prompt] Applied system prompt for Grok in '${config.SYSTEM_PROMPT_MODE}' mode.`);
 
         return requestBody;

@@ -6,6 +6,7 @@ import * as crypto from 'crypto'; // Import crypto for MD5 hashing
 import logger from './logger.js';
 import { convertData, getOpenAIStreamChunkStop, releaseStreamState } from '../convert/convert.js';
 import { ProviderStrategyFactory } from './provider-strategies.js';
+import { clearRequestSystemPrompts, replaceRequestSystemPrompts } from './system-prompt-replacements.js';
 import { getPluginManager } from '../core/plugin-manager.js';
 import { MODEL_PROTOCOL_PREFIX, MODEL_PROVIDER } from './constants.js';
 
@@ -2127,8 +2128,20 @@ export async function handleContentGenerationRequest(req, res, service, endpoint
     }
 
     // 1. Convert request body from client format to backend format, if necessary.
-    // 使用浅拷贝以避免直接变异 originalRequestBody，保持原始数据的纯净性以供后续钩子使用
-    let processedRequestBody = { ...originalRequestBody };
+    // 转换和系统提示词处理可能修改嵌套消息，保留独立的原始请求供监控使用。
+    let processedRequestBody = structuredClone(originalRequestBody);
+    const targetProtocol = getProtocolPrefix(toProvider);
+    const promptProtocol = targetProtocol === MODEL_PROTOCOL_PREFIX.FORWARD ? fromProvider : targetProtocol;
+    const replacementRules = CONFIG.SYSTEM_PROMPT_REPLACEMENTS;
+
+    // Remove old prompts before any converter can turn them into ordinary conversation text.
+    const overwritePrompt = CONFIG.SYSTEM_PROMPT_MODE === 'overwrite' &&
+        CONFIG.SYSTEM_PROMPT_FILE_PATH && CONFIG.SYSTEM_PROMPT_CONTENT != null;
+    if (overwritePrompt && fromProvider !== promptProtocol) {
+        clearRequestSystemPrompts(processedRequestBody, fromProvider);
+    } else if (targetProtocol === MODEL_PROTOCOL_PREFIX.GROK) {
+        replaceRequestSystemPrompts(processedRequestBody, fromProvider, replacementRules);
+    }
 
     // 将 _monitorRequestId 注入到 requestBody 中，以便在 service 内部访问
     if (CONFIG._monitorRequestId) {
@@ -2162,8 +2175,11 @@ export async function handleContentGenerationRequest(req, res, service, endpoint
         processedRequestBody.endpoint = requestPath;
     }
 
-    // 3. Apply system prompt from file if configured.
-    processedRequestBody = await _applySystemPromptFromFile(CONFIG, processedRequestBody, toProvider);
+    // 3. Merge the optional file prompt, then apply replacement rules independently of the file.
+    processedRequestBody = await _applySystemPromptFromFile(CONFIG, processedRequestBody, promptProtocol);
+    if (targetProtocol !== MODEL_PROTOCOL_PREFIX.GROK) {
+        replaceRequestSystemPrompts(processedRequestBody, promptProtocol, replacementRules);
+    }
     await _manageSystemPrompt(processedRequestBody, toProvider);
 
     // 4. Log the incoming prompt (after potential conversion to the backend's format).

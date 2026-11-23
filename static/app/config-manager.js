@@ -399,12 +399,15 @@ function addReplacementRow(oldVal = '', newVal = '') {
     const row = document.createElement('div');
     row.className = 'replacement-row';
     row.innerHTML = `
-        <input type="text" class="form-control replacement-old" placeholder="${t('config.advanced.replacement.old')}" value="${oldVal}">
-        <input type="text" class="form-control replacement-new" placeholder="${t('config.advanced.replacement.new')}" value="${newVal}">
+        <input type="text" class="form-control replacement-old" placeholder="${t('config.advanced.replacement.old')}">
+        <input type="text" class="form-control replacement-new" placeholder="${t('config.advanced.replacement.new')}">
         <button type="button" class="remove-replacement-btn" title="${t('config.advanced.replacement.remove')}">
             <i class="fas fa-trash-alt"></i>
         </button>
     `;
+
+    row.querySelector('.replacement-old').value = oldVal;
+    row.querySelector('.replacement-new').value = newVal;
 
     // 绑定删除按钮事件
     const removeBtn = row.querySelector('.remove-replacement-btn');

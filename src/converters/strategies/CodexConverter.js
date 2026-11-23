@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import { BaseConverter } from '../BaseConverter.js';
 import { MODEL_PROTOCOL_PREFIX } from '../../utils/common.js';
-import { resolveCodexReasoningEffort } from '../../providers/openai/codex-request-utils.js';
+import { normalizeCodexInstructions, resolveCodexReasoningEffort } from '../../providers/openai/codex-request-utils.js';
 import {
     generateResponseCreated,
     generateResponseInProgress,
@@ -248,15 +248,9 @@ export class CodexConverter extends BaseConverter {
     
         // 确保 input 数组中的每个项都有 type: "message"，并将系统角色转换为开发者角色
         if (codexRequest.input && Array.isArray(codexRequest.input)) {
-            codexRequest.input = codexRequest.input.filter(item => {
-                // 如果 instructions 已存在，仅过滤普通 system/developer 消息以避免重复。
-                // additional_tools 等特殊输入项即使使用 developer 角色也必须保留。
-                const isMessage = !item?.type || item.type === 'message';
-                if (codexRequest.instructions && isMessage && (item.role === 'system' || item.role === 'developer')) {
-                    return false;
-                }
-                return true;
-            }).map(item => {
+            // Fold system/developer messages into instructions without dropping distinct text.
+            normalizeCodexInstructions(codexRequest);
+            codexRequest.input = codexRequest.input.map(item => {
                 // 如果没有 type 或者 type 不是 message，则添加 type: "message"
                 if (!item.type || item.type !== 'message') {
                     item = { type: "message", ...item };

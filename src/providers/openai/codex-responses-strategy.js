@@ -1,7 +1,8 @@
 import { ProviderStrategy } from '../../utils/provider-strategy.js';
 import logger from '../../utils/logger.js';
-import { extractSystemPromptFromRequestBody, MODEL_PROTOCOL_PREFIX } from '../../utils/common.js';
-import { applySystemPromptReplacements } from '../../converters/utils.js';
+import { clearRequestSystemPrompts } from '../../utils/system-prompt-replacements.js';
+import { MODEL_PROTOCOL_PREFIX } from '../../utils/common.js';
+import { normalizeCodexInstructions } from './codex-request-utils.js';
 
 /**
  * OpenAI Responses API strategy implementation.
@@ -62,44 +63,19 @@ class CodexResponsesAPIStrategy extends ProviderStrategy {
         }
 
         const filePromptContent = config.SYSTEM_PROMPT_CONTENT;
-        if (filePromptContent === null) {
+        if (filePromptContent == null) {
             return requestBody;
         }
 
-        // Apply system prompt replacements
-        const finalSystemText = applySystemPromptReplacements(filePromptContent, config.SYSTEM_PROMPT_REPLACEMENTS);
-
-        // In Responses API, system instructions are typically passed in 'instructions' field
-        // or in the input array with role: 'developer'
-        requestBody.instructions = requestBody.instructions || finalSystemText;
-
-        // If using instructions field is not desired, append to input array instead
-        if (!requestBody.instructions || config.SYSTEM_PROMPT_MODE === 'append') {
-            if (typeof requestBody.input === 'string') {
-                // Convert to array format to add system message
-                requestBody.input = [
-                    { type: 'message', role: 'developer', content: finalSystemText },
-                    { type: 'message', role: 'user', content: requestBody.input }
-                ];
-            } else if (Array.isArray(requestBody.input)) {
-                // Check if system message already exists
-                const systemMessageIndex = requestBody.input.findIndex(m =>
-                    m.role === 'developer' || (m.type && m.type === 'developer')
-                );
-
-                if (systemMessageIndex !== -1) {
-                    requestBody.input[systemMessageIndex].content = finalSystemText;
-                } else {
-                    requestBody.input.unshift({ type: 'message', role: 'developer', content: finalSystemText });
-                }
-            } else {
-                // If input is not defined, initialize with system message
-                requestBody.input = [{ type: 'message', role: 'developer', content: finalSystemText }];
-            }
-        } else if (requestBody.instructions) {
-            // If system prompt mode is not append, then replace the instructions
-            requestBody.instructions = finalSystemText;
+        // Codex requires system/developer messages to be sent as top-level instructions.
+        if (config.SYSTEM_PROMPT_MODE === 'overwrite') {
+            clearRequestSystemPrompts(requestBody, MODEL_PROTOCOL_PREFIX.CODEX);
+        } else {
+            normalizeCodexInstructions(requestBody);
         }
+        requestBody.instructions = config.SYSTEM_PROMPT_MODE === 'append' && requestBody.instructions
+            ? `${requestBody.instructions}\n${filePromptContent}`
+            : filePromptContent;
 
         logger.info(`[System Prompt] Applied system prompt from ${config.SYSTEM_PROMPT_FILE_PATH} in '${config.SYSTEM_PROMPT_MODE}' mode for provider 'responses'.`);
 

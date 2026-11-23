@@ -1,7 +1,7 @@
 import { ProviderStrategy } from '../../utils/provider-strategy.js';
 import logger from '../../utils/logger.js';
+import { clearRequestSystemPrompts } from '../../utils/system-prompt-replacements.js';
 import { extractSystemPromptFromRequestBody, MODEL_PROTOCOL_PREFIX } from '../../utils/common.js';
-import { applySystemPromptReplacements } from '../../converters/utils.js';
 
 /**
  * OpenAI provider strategy implementation.
@@ -52,7 +52,15 @@ class OpenAIStrategy extends ProviderStrategy {
         }
 
         const filePromptContent = config.SYSTEM_PROMPT_CONTENT;
-        if (filePromptContent === null) {
+        if (filePromptContent == null) {
+            return requestBody;
+        }
+
+        if (config.SYSTEM_PROMPT_MODE === 'overwrite') {
+            clearRequestSystemPrompts(requestBody, MODEL_PROTOCOL_PREFIX.OPENAI);
+            requestBody.messages ??= [];
+            requestBody.messages.unshift({ role: 'system', content: filePromptContent });
+            logger.info(`[System Prompt] Overwrote system prompt from ${config.SYSTEM_PROMPT_FILE_PATH} for provider 'openai'.`);
             return requestBody;
         }
 
@@ -62,17 +70,14 @@ class OpenAIStrategy extends ProviderStrategy {
             ? `${existingSystemText}\n${filePromptContent}`
             : filePromptContent;
 
-        // Apply system prompt replacements
-        const finalSystemText = applySystemPromptReplacements(newSystemText, config.SYSTEM_PROMPT_REPLACEMENTS);
-
         if (!requestBody.messages) {
             requestBody.messages = [];
         }
         const systemMessageIndex = requestBody.messages.findIndex(m => m.role === 'system' || m.role === 'developer');
         if (systemMessageIndex !== -1) {
-            requestBody.messages[systemMessageIndex].content = finalSystemText;
+            requestBody.messages[systemMessageIndex].content = newSystemText;
         } else {
-            requestBody.messages.unshift({ role: 'system', content: finalSystemText });
+            requestBody.messages.unshift({ role: 'system', content: newSystemText });
         }
         logger.info(`[System Prompt] Applied system prompt from ${config.SYSTEM_PROMPT_FILE_PATH} in '${config.SYSTEM_PROMPT_MODE}' mode for provider 'openai'.`);
 

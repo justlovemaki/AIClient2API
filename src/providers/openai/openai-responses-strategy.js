@@ -1,7 +1,7 @@
 import { ProviderStrategy } from '../../utils/provider-strategy.js';
 import logger from '../../utils/logger.js';
+import { clearRequestSystemPrompts } from '../../utils/system-prompt-replacements.js';
 import { extractSystemPromptFromRequestBody, MODEL_PROTOCOL_PREFIX } from '../../utils/common.js';
-import { applySystemPromptReplacements } from '../../converters/utils.js';
 
 /**
  * OpenAI Responses API strategy implementation.
@@ -62,7 +62,14 @@ class ResponsesAPIStrategy extends ProviderStrategy {
         }
 
         const filePromptContent = config.SYSTEM_PROMPT_CONTENT;
-        if (filePromptContent === null) {
+        if (filePromptContent == null) {
+            return requestBody;
+        }
+
+        if (config.SYSTEM_PROMPT_MODE === 'overwrite') {
+            clearRequestSystemPrompts(requestBody, MODEL_PROTOCOL_PREFIX.OPENAI_RESPONSES);
+            requestBody.instructions = filePromptContent;
+            logger.info(`[System Prompt] Overwrote system prompt from ${config.SYSTEM_PROMPT_FILE_PATH} for provider 'responses'.`);
             return requestBody;
         }
 
@@ -72,22 +79,19 @@ class ResponsesAPIStrategy extends ProviderStrategy {
             ? `${existingSystemText}\n${filePromptContent}`
             : filePromptContent;
 
-        // Apply system prompt replacements
-        const finalSystemText = applySystemPromptReplacements(newSystemText, config.SYSTEM_PROMPT_REPLACEMENTS);
-
         // In Responses API, system instructions are typically passed in 'instructions' field
         // or in the input array with role: 'system'
         if (requestBody.instructions !== undefined || !Array.isArray(requestBody.input)) {
-            requestBody.instructions = finalSystemText;
+            requestBody.instructions = newSystemText;
         } else {
             const systemMessageIndex = requestBody.input.findIndex(m =>
                 m.role === 'system' || m.role === 'developer' || m.type === 'system' || m.type === 'developer'
             );
 
             if (systemMessageIndex !== -1) {
-                requestBody.input[systemMessageIndex].content = finalSystemText;
+                requestBody.input[systemMessageIndex].content = newSystemText;
             } else {
-                requestBody.input.unshift({ role: 'system', content: finalSystemText });
+                requestBody.input.unshift({ role: 'system', content: newSystemText });
             }
         }
 

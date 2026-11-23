@@ -1,7 +1,6 @@
 import { API_ACTIONS, extractSystemPromptFromRequestBody, MODEL_PROTOCOL_PREFIX } from '../../utils/common.js';
 import logger from '../../utils/logger.js';
 import { ProviderStrategy } from '../../utils/provider-strategy.js';
-import { applySystemPromptReplacements } from '../../converters/utils.js';
 
 const GEMINI_FINISH_REASON = Object.freeze({
     MALFORMED_FUNCTION_CALL: 'MALFORMED_FUNCTION_CALL'
@@ -67,7 +66,7 @@ class GeminiStrategy extends ProviderStrategy {
         }
 
         const filePromptContent = config.SYSTEM_PROMPT_CONTENT;
-        if (filePromptContent === null) {
+        if (filePromptContent == null) {
             return requestBody;
         }
 
@@ -77,13 +76,8 @@ class GeminiStrategy extends ProviderStrategy {
             ? `${existingSystemText}\n${filePromptContent}`
             : filePromptContent;
 
-        // Apply system prompt replacements
-        const finalSystemText = applySystemPromptReplacements(newSystemText, config.SYSTEM_PROMPT_REPLACEMENTS);
-
-        requestBody.systemInstruction = { parts: [{ text: finalSystemText }] };
-        if (requestBody.system_instruction) {
-            delete requestBody.system_instruction;
-        }
+        requestBody.systemInstruction = { parts: [{ text: newSystemText }] };
+        delete requestBody.system_instruction;
         logger.info(`[System Prompt] Applied system prompt from ${config.SYSTEM_PROMPT_FILE_PATH} in '${config.SYSTEM_PROMPT_MODE}' mode for provider 'gemini'.`);
 
         return requestBody;
