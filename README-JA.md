@@ -185,7 +185,6 @@
       APIMart による本プロジェクトへのご支援に感謝します！APIMart は AI 画像・動画生成に特化した低価格 API プラットフォームです。GPT-Image-2 は 1 枚 $0.006 から、1 ドルで 160 枚以上の画像を生成できます。画像も動画も共通の非同期 API で対応：タスクを送信して ID を取得し、ポーリングまたはコールバックで結果を受け取れます。数万枚の画像をタイムアウトなしで一括生成でき、モデルの切り替えにもコード変更は不要です。月額料金なしの従量課金制 — <a href="https://go.apimart.ai/gh-aiclient2api">こちらから登録</a>してすぐに利用を開始できます。
     </td>
   </tr>
-  <!-- RunningHub sponsorship (temporarily hidden)
   <tr>
     <td width="25%" align="center" valign="middle">
       <a href="https://www.runninghub.ai/call-api?source=github">
@@ -195,11 +194,10 @@
     <td width="75%" align="left" valign="middle">
       <strong>RUNNINGHUB API</strong> — API 経由で 400 以上の最先端 AI モデル（Seedance、Kling、MiniMax、Nano Banana、Veo など）に非常に競争力のある価格でアクセス。<br>
       <code>高並行処理対応</code> <code>無料 API テスト</code> <code>エンドツーエンド暗号化</code> · <a href="https://www.runninghub.ai/call-api?source=github"><strong>👉 無料で API をテスト（Test the API for Free）</strong></a><br>
-      底値で強力な Seedance API を手に入れましょう！オンラインツールは約 US$0.031/秒〜、コストを 60〜80% 削減！<br>
+      底値で強力な Seedance API を手に入れましょう！オンラインツール Seedance 2.5 720p は 0.15元/秒から、コストを 60〜80% 削減！<br>
       <small style="color: #666;">RunningHub の割引や無料トライアルについては、<a href="mailto:zhenyuedong@haima.me">zhenyuedong@haima.me</a> までお問い合わせください。</small>
     </td>
   </tr>
-  -->
   <tr>
     <td width="25%" align="center" valign="middle">
       <img src="static/wechat.png" alt="Sponsor Contact" width="150">

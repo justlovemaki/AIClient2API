@@ -185,7 +185,6 @@
       感谢 APIMart 赞助了本项目！APIMart 是专注 AI 图片/视频生成的低价 API 平台，GPT-Image-2 低至 $0.006/张，1 美元可出图 160+ 张。图片、视频一套异步 API 通吃，提交任务拿 ID、回调取结果，跑批万张不超时、换模型不改代码。按量付费、无月费，通过<a href="https://go.apimart.ai/gh-aiclient2api">此注册链接</a>注册即可开用。
     </td>
   </tr>
-  <!-- RunningHub 赞助信息（暂时隐藏）
   <tr>
     <td width="25%" align="center" valign="middle">
       <a href="https://www.runninghub.ai/call-api?source=github">
@@ -195,11 +194,10 @@
     <td width="75%" align="left" valign="middle">
       <strong>RUNNINGHUB API</strong> — 通过 API 访问 400+ 顶尖 AI 模型（Seedance、Kling、MiniMax、Nano Banana、Veo 等），享受极具竞争力的超低价格。<br>
       <code>高并发支持</code> <code>免费 API 测试</code> <code>端到端加密</code> · <a href="https://www.runninghub.ai/call-api?source=github"><strong>👉 免费测试 API（Test the API for Free）</strong></a><br>
-      以极具竞争力的底价获取全功能 Seedance API 接入！在线工具约 US$0.031/秒 起，最高降低 60-80% 成本！<br>
+      以极具竞争力的底价获取全功能 Seedance API 接入！在线工具Seedance2.5 720p低至 0.15元/秒，最高降低 60-80% 成本！<br>
       <small style="color: #666;">如需 RunningHub 折扣及免费试用，请联系：<a href="mailto:zhenyuedong@haima.me">zhenyuedong@haima.me</a>。</small>
     </td>
   </tr>
-  -->
   <tr>
     <td width="25%" align="center" valign="middle">
       <img src="static/wechat.png" alt="Sponsor Contact" width="150">

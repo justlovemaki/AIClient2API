@@ -74,6 +74,7 @@ const ANTIGRAVITY_CLIENT_TO_UPSTREAM_MODEL = {
     'gemini-4-argon': 'gemini-4-argon-medium',
     'gemini-4-carbon': 'gemini-4-carbon-medium',
     'gemini-4-hydrogen': 'gemini-4-hydrogen-medium',
+    'gemini-4-neon': 'gemini-4-neon-medium',
     'gemini-3.1-pro-high': 'gemini-pro-agent',
     'gemini-3.1-pro-preview': 'gemini-pro-agent',
     'gemini-3.5-flash-high': 'gemini-3.5-flash-low',
@@ -85,16 +86,6 @@ const ANTIGRAVITY_CLIENT_TO_UPSTREAM_MODEL = {
     'gemini-3.8-flash-medium': 'gemini-3.8-flash-low',
 };
 
-const ANTIGRAVITY_UPSTREAM_TO_CLIENT_MODELS = {
-    'gemini-4-argon-medium': ['gemini-4-argon'],
-    'gemini-4-carbon-medium': ['gemini-4-carbon'],
-    'gemini-4-hydrogen-medium': ['gemini-4-hydrogen'],
-    'gemini-pro-agent': ['gemini-3.1-pro-high', 'gemini-3.1-pro-preview'],
-    'gemini-3.6-flash-low': ['gemini-3.6-flash', 'gemini-3.6-flash-low', 'gemini-3.6-flash-medium'],
-    'gemini-3.7-flash-low': ['gemini-3.7-flash', 'gemini-3.7-flash-low', 'gemini-3.7-flash-medium'],
-    'gemini-3.8-flash-low': ['gemini-3.8-flash', 'gemini-3.8-flash-low', 'gemini-3.8-flash-medium'],
-};
-
 const ANTIGRAVITY_CLIENT_MODEL_THINKING_LEVEL = {
     'gemini-4-argon': 'medium',
     'gemini-4-argon-high': 'high',
@@ -102,6 +93,8 @@ const ANTIGRAVITY_CLIENT_MODEL_THINKING_LEVEL = {
     'gemini-4-carbon-high': 'high',
     'gemini-4-hydrogen': 'medium',
     'gemini-4-hydrogen-high': 'high',
+    'gemini-4-neon': 'medium',
+    'gemini-4-neon-high': 'high',
     'gemini-pro-agent': 'high',
     'gemini-3.1-pro-high': 'high',
     'gemini-3.1-pro-preview': 'high',
@@ -139,6 +132,12 @@ const ANTIGRAVITY_MODEL_METADATA = {
         thinking: { levels: ['low', 'medium', 'high'] }
     },
     'gemini-4-hydrogen-high': {
+        thinking: { levels: ['low', 'medium', 'high'] }
+    },
+    'gemini-4-neon-medium': {
+        thinking: { levels: ['low', 'medium', 'high'] }
+    },
+    'gemini-4-neon-high': {
         thinking: { levels: ['low', 'medium', 'high'] }
     },
     'claude-opus-4-6-thinking': {
@@ -250,7 +249,7 @@ export function resolveAntigravityUpstreamModel(modelName) {
 }
 
 function getAntigravityRequestUserAgent(modelName, userAgent) {
-    if (/^gemini-4-(argon|carbon|hydrogen)(?:-|$)/.test(resolveAntigravityUpstreamModel(modelName))) {
+    if (/^gemini-4-(argon|carbon|hydrogen|neon)(?:-|$)/.test(resolveAntigravityUpstreamModel(modelName))) {
         return userAgent?.startsWith('antigravity/cli/') ? userAgent : ANTIGRAVITY_CLI_USER_AGENT;
     }
     return userAgent;
@@ -269,30 +268,29 @@ export function isAntigravityModelListed(modelName, tierId) {
     return tierId !== 'free-tier' || ANTIGRAVITY_FREE_TIER_MODELS.has(stripModelSuffix(modelName));
 }
 
-function expandAntigravityClientModels(upstreamModel) {
+export function expandAntigravityClientModels(upstreamModel, { includeUnlisted = false } = {}) {
     const baseModel = stripModelSuffix(upstreamModel);
     if (!baseModel) return [];
-    const out = [];
-    const push = (modelId) => {
-        if (modelId && !out.includes(modelId)) out.push(modelId);
-    };
+    const resolvedModel = resolveAntigravityUpstreamModel(baseModel);
 
-    if (baseModel.startsWith('claude-')) {
-        push(`gemini-${baseModel}`);
-        return out;
+    if (resolvedModel.startsWith('claude-')) {
+        return [`gemini-${resolvedModel}`];
     }
 
-    let exposedAlias = false;
-    for (const alias of ANTIGRAVITY_UPSTREAM_TO_CLIENT_MODELS[baseModel] || []) {
-        if (ANTIGRAVITY_MODELS.includes(alias)) {
-            push(alias);
-            exposedAlias = true;
-        }
+    // Derive the reverse mapping from the request mapping so discovery and quota
+    // display cannot drift when a new client alias is added.
+    const aliases = ANTIGRAVITY_MODELS.filter(modelId =>
+        resolveAntigravityUpstreamModel(modelId) === resolvedModel
+    );
+    if (aliases.length > 0) return aliases;
+    if (ANTIGRAVITY_MODEL_METADATA[baseModel]) return [baseModel];
+
+    // Usage is authoritative for public models even before the local catalog is
+    // updated. Keep internal chat_*/tab_* entries out of the quota page.
+    if (includeUnlisted && /^(gemini-|claude-|gpt-)/.test(baseModel)) {
+        return [baseModel];
     }
-    if (ANTIGRAVITY_MODELS.includes(baseModel) || (!exposedAlias && ANTIGRAVITY_MODEL_METADATA[baseModel])) {
-        push(baseModel);
-    }
-    return out;
+    return [];
 }
 
 function getAntigravityModelMetadata(modelName) {
@@ -2285,7 +2283,7 @@ export class AntigravityApiService {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'User-Agent': this.userAgent
+                        'User-Agent': getAntigravityRequestUserAgent('gemini-4-argon', this.userAgent)
                     },
                     responseType: 'json',
                     body: JSON.stringify({ project: this.projectId })

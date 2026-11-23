@@ -60,6 +60,8 @@ export const PROVIDER_MODELS = {
         'gemini-4-carbon-high',
         'gemini-4-hydrogen',
         'gemini-4-hydrogen-high',
+        'gemini-4-neon',
+        'gemini-4-neon-high',
         'gemini-3-flash',
         'gemini-3.5-flash-low',
         'gemini-3.5-flash-high',

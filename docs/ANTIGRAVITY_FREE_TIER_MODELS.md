@@ -55,9 +55,9 @@ Web UI 通过 `GET /api/provider-models?includeUnavailable=true` 获取 `{ model
 
 若需要放开这些过渡期模型，应结合该账号的 `loadCodeAssist` tier、`fetchAvailableModels` 结果及实际请求结果重新验证，再更新名单及对应测试。本次没有可用的真实账号凭据，未进行上游实测。
 
-## Gemini 4 Argon / Carbon / Hydrogen
+## Gemini 4 Argon / Carbon / Hydrogen / Neon
 
-Antigravity 提供以下六个客户端模型入口，但不加入免费账号白名单：
+Antigravity 提供以下八个客户端模型入口，但不加入免费账号白名单：
 
 | 客户端 ID | 上游请求模型 | thinkingLevel |
 | --- | --- | --- |
@@ -67,8 +67,10 @@ Antigravity 提供以下六个客户端模型入口，但不加入免费账号�
 | `gemini-4-carbon-high` | `gemini-4-carbon-high` | `high` |
 | `gemini-4-hydrogen` | `gemini-4-hydrogen-medium` | `medium` |
 | `gemini-4-hydrogen-high` | `gemini-4-hydrogen-high` | `high` |
+| `gemini-4-neon` | `gemini-4-neon-medium` | `medium` |
+| `gemini-4-neon-high` | `gemini-4-neon-high` | `high` |
 
-Carbon、Hydrogen 沿用既有 Argon 的 Medium 别名、High 上游 ID、思考等级及 CLI User-Agent 处理方式；这是本地兼容实现，尚未使用真实账号核实其上游 ID 和套餐授权。
+Carbon、Hydrogen、Neon 沿用既有 Argon 的 Medium 别名、High 上游 ID、思考等级及 CLI User-Agent 处理方式；这是本地兼容实现，尚未使用真实账号核实其上游 ID 和套餐授权。
 
 模型发现时把上游 Medium ID 展示为基础入口；High ID 保持不变。基础入口及 High 都参与静态后备目录、原生模型列表、自动模式和 Playground 的账号池模型筛选。
 
@@ -82,7 +84,7 @@ Carbon、Hydrogen 沿用既有 Argon 的 Medium 别名、High 上游 ID、思考
 npm test -- --runInBand tests/antigravity-gemini4.test.js tests/antigravity-quota-family.test.js tests/claude-thinking-config.test.js
 ```
 
-覆盖六个入口的模型注册、别名规范化、思考等级、流式/非流式请求与 CLI 标识、模型发现和静态后备目录，以及免费账号限制。全部使用模拟传输，不代表真实上游调用验证。
+覆盖八个入口的模型注册、别名规范化、思考等级、流式/非流式请求与 CLI 标识、模型发现和静态后备目录，以及免费账号限制。全部使用模拟传输，不代表真实上游调用验证。
 
 ## 原策略回归验证（历史测试命令）
 

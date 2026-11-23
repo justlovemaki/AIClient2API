@@ -7,6 +7,7 @@ import { getProviderPoolManager } from './service-manager.js';
 import { serviceInstances } from '../providers/adapter.js';
 import { MODEL_PROVIDER } from '../utils/common.js';
 import { getProviderModels } from '../providers/provider-models.js';
+import { expandAntigravityClientModels, resolveAntigravityUpstreamModel } from '../providers/gemini/antigravity-core.js';
 
 /**
  * 用量查询服务类
@@ -461,32 +462,37 @@ export function formatAntigravityUsage(usageData) {
 
     // 检查是否为原始 API 响应 (包含 models 对象且内部有 quotaInfo)
     if (usageData.models && typeof usageData.models === 'object' && !usageData.summary) {
-        const supportedModels = getProviderModels(MODEL_PROVIDER.ANTIGRAVITY);
         const items = [];
+        const quotaModels = new Map();
         let totalPercent = 0;
         let maxResetAt = null;
-        
+
         for (const [modelId, modelData] of Object.entries(usageData.models)) {
-            // 只处理包含配额信息且在支持列表中的模型
-            // 对 Claude 模型添加别名显示 (保持与原逻辑一致)
-            const aliasName = modelId.startsWith('claude-') ? `gemini-${modelId}` : modelId;
-            
-            // 过滤：要么在 ANTIGRAVITY_MODELS 列表中，要么是以 claude- 开头（会被映射为 gemini-claude-*）
-            if (!supportedModels.includes(aliasName) && !modelId.startsWith('claude-')) continue;
-            
-            if (modelData && modelData.quotaInfo) {
-                const qInfo = modelData.quotaInfo;
-                const remaining = typeof qInfo.remainingFraction === 'number' ? qInfo.remainingFraction : (qInfo.remaining || 0);
-                const percent = (1 - remaining) * 100;
-                
-                totalPercent += percent;
-                if (!maxResetAt || qInfo.resetTime > maxResetAt) {
-                    maxResetAt = qInfo.resetTime;
-                }
-                
+            if (!modelData?.quotaInfo) continue;
+
+            const upstreamModel = resolveAntigravityUpstreamModel(modelId);
+            const clientModels = expandAntigravityClientModels(upstreamModel, { includeUnlisted: true });
+            if (clientModels.length === 0) continue;
+
+            // 同一上游可能同时返回原名和别名；优先采用上游原名的额度，避免重复统计。
+            if (!quotaModels.has(upstreamModel) || modelId === upstreamModel || modelId === `models/${upstreamModel}`) {
+                quotaModels.set(upstreamModel, { clientModels, quotaInfo: modelData.quotaInfo });
+            }
+        }
+
+        for (const { clientModels, quotaInfo: qInfo } of quotaModels.values()) {
+            const remaining = typeof qInfo.remainingFraction === 'number' ? qInfo.remainingFraction : (qInfo.remaining || 0);
+            const percent = (1 - remaining) * 100;
+
+            totalPercent += percent;
+            if (!maxResetAt || qInfo.resetTime > maxResetAt) {
+                maxResetAt = qInfo.resetTime;
+            }
+
+            for (const modelId of clientModels) {
                 items.push({
-                    id: aliasName,
-                    label: aliasName,
+                    id: modelId,
+                    label: modelId,
                     used: percent,
                     limit: 100,
                     percent,
@@ -500,8 +506,8 @@ export function formatAntigravityUsage(usageData) {
         // 按名称排序
         items.sort((a, b) => a.id.localeCompare(b.id));
 
-        // 计算平均使用率作为概要
-        const avgUsedPercent = items.length > 0 ? totalPercent / items.length : 0;
+        // 每个上游额度只统计一次，不因客户端别名数量不同而改变平均使用率。
+        const avgUsedPercent = quotaModels.size > 0 ? totalPercent / quotaModels.size : 0;
         const plan = parseTierId(usageData.tierId);
 
         return {

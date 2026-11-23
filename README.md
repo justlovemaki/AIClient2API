@@ -185,7 +185,6 @@
       Thanks to APIMart for sponsoring this project! APIMart is a low-cost API platform for AI image &amp; video generation — GPT-Image-2 from $0.006/image, 160+ images per dollar. One async API covers both image and video: submit a task, get an ID, fetch results via polling or callback. Batch tens of thousands of images without timeouts, switch models without changing code. Pay-as-you-go with no monthly fee — <a href="https://go.apimart.ai/gh-aiclient2api">sign up here</a> to get started.
     </td>
   </tr>
-  <!-- RunningHub sponsorship (temporarily hidden)
   <tr>
     <td width="25%" align="center" valign="middle">
       <a href="https://www.runninghub.ai/call-api?source=github">
@@ -195,11 +194,10 @@
     <td width="75%" align="left" valign="middle">
       <strong>RUNNINGHUB API</strong> — Access 400+ leading AI models via API - Seedance, Kling, MiniMax, Nano Banana, Veo, and more - at highly competitive prices.<br>
       <code>High-Concurrency Support</code> <code>Free API Testing</code> <code>End-to-End Encryption</code> · <a href="https://www.runninghub.ai/call-api?source=github"><strong>👉 Test the API for Free</strong></a><br>
-      Get full-powered Seedance API access at rock-bottom prices! Our online tool starts at approximately US$0.031/second—cutting costs by 60-80%!<br>
+      Get full-powered Seedance API access at rock-bottom prices! Our online Seedance 2.5 720p tool starts as low as RMB 0.15/second—cutting costs by 60-80%!<br>
       <small style="color: #666;">For RunningHub discounts and free trials, contact <a href="mailto:zhenyuedong@haima.me">zhenyuedong@haima.me</a>.</small>
     </td>
   </tr>
-  -->
   <tr>
     <td width="25%" align="center" valign="middle">
       <img src="static/wechat.png" alt="Sponsor Contact" width="150">
