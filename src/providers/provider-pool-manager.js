@@ -1563,6 +1563,17 @@ export class ProviderPoolManager {
                             });
                         }
 
+                        // 若未显式限制 supportedModels，将上游实际发现的模型也并入目录，避免本地列表滞后
+                        if (configuredSupportedModels.length === 0) {
+                            const discoveredUpstreamModels = accountAvailability
+                                .filter(account => account.discoverySource === 'upstream' && account.modelIds)
+                                .flatMap(account => [...account.modelIds])
+                                .filter(model => !customAliases.has(model));
+                            if (discoveredUpstreamModels.length > 0) {
+                                models = normalizeModelIds([...models, ...discoveredUpstreamModels]);
+                            }
+                        }
+
                         if (includeUnavailable) {
                             const customModels = (Array.isArray(this.globalConfig.customModels) ? this.globalConfig.customModels : [])
                                 .filter(model => customModelMatchesProvider(model, providerType));

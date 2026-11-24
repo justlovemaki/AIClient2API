@@ -277,8 +277,22 @@ function getPlanClass(plan) {
 export function formatKiroUsage(usageData) {
     if (!usageData) return null;
 
-    // 兼容多种命名格式 (usageBreakdownList 是 API 原生, usageBreakdown 是某些版本的处理结果)
-    const breakdownList = usageData.usageBreakdownList || usageData.usageBreakdown || [];
+    // 兼容多种命名格式 (usageBreakdownList 是 API 原生, usageBreakdown 可能是单个对象或数组, limits 是 UsageLimitList)
+    let breakdownList = [];
+    if (Array.isArray(usageData.usageBreakdownList)) {
+        breakdownList = usageData.usageBreakdownList;
+    } else if (Array.isArray(usageData.usageBreakdown)) {
+        breakdownList = usageData.usageBreakdown;
+    } else if (usageData.usageBreakdown && typeof usageData.usageBreakdown === 'object') {
+        breakdownList = [usageData.usageBreakdown];
+    } else if (Array.isArray(usageData.limits)) {
+        breakdownList = usageData.limits.map(lim => ({
+            type: lim.type,
+            currentUsage: lim.currentUsage,
+            usageLimit: lim.totalUsageLimit ?? lim.usageLimit,
+            percentUsed: lim.percentUsed
+        }));
+    }
     const items = [];
     const now = Date.now();
     const THREE_MONTHS_MS = 90 * 24 * 60 * 60 * 1000; // 约3个月
@@ -292,14 +306,16 @@ export function formatKiroUsage(usageData) {
     
     breakdownList.forEach(breakdown => {
         // 1. 基本资源信息
+        const resourceId = breakdown.resourceType || breakdown.type || 'AGENTIC_REQUEST';
+        const resourceLabel = breakdown.displayName || breakdown.type || breakdown.resourceType || 'Agentic Request';
         if (isWithinWindow(breakdown.nextDateReset)) {
-            const used = breakdown.currentUsageWithPrecision ?? breakdown.currentUsage;
-            const limit = breakdown.usageLimitWithPrecision ?? breakdown.usageLimit;
-            const percent = limit > 0 ? (used / limit) * 100 : 0;
+            const used = breakdown.currentUsageWithPrecision ?? breakdown.currentUsage ?? 0;
+            const limit = breakdown.usageLimitWithPrecision ?? breakdown.usageLimit ?? breakdown.totalUsageLimit ?? 0;
+            const percent = limit > 0 ? (used / limit) * 100 : (Number(breakdown.percentUsed) || 0);
             
             items.push({
-                id: breakdown.resourceType,
-                label: breakdown.displayName,
+                id: resourceId,
+                label: resourceLabel,
                 used,
                 limit,
                 percent,
@@ -344,7 +360,7 @@ export function formatKiroUsage(usageData) {
                 const isExpired = ft.freeTrialStatus === 'EXPIRED';
                 
                 items.push({
-                    id: `freetrial_${breakdown.resourceType}`,
+                    id: `freetrial_${resourceId}`,
                     label: `Free Trial${isExpired ? ' (Expired)' : ''}`,
                     used: ftUsed,
                     limit: ftLimit,
@@ -366,6 +382,7 @@ export function formatKiroUsage(usageData) {
 
     // 兼容多种用户信息和计划信息的路径
     let plan = usageData.subscriptionInfo?.subscriptionTitle || 
+               usageData.subscriptionInfo?.subscriptionTier || 
                usageData.subscription?.title || 
                'FREE';
                

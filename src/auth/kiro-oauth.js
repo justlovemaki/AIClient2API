@@ -623,6 +623,7 @@ function createKiroHttpCallbackServer(port, codeVerifier, expectedState, options
                             'User-Agent': 'AIClient2API/1.0.0'
                         },
                         body: JSON.stringify({
+                            grant_type: 'authorization_code',
                             code,
                             code_verifier: codeVerifier,
                             redirect_uri: redirectUri
@@ -650,6 +651,9 @@ function createKiroHttpCallbackServer(port, codeVerifier, expectedState, options
                         credPath = path.join(targetDir, `${folderName}.json`);
                     }
                     
+                    const arnRegionMatch = typeof tokenData.profileArn === 'string'
+                        ? tokenData.profileArn.match(/^arn:aws:codewhisperer:([a-z0-9-]+):/i)
+                        : null;
                     const saveData = {
                         accessToken: tokenData.accessToken,
                         refreshToken: tokenData.refreshToken,
@@ -657,7 +661,7 @@ function createKiroHttpCallbackServer(port, codeVerifier, expectedState, options
                         socialProvider: options.socialProvider,
                         expiresAt: new Date(Date.now() + (tokenData.expiresIn || 3600) * 1000).toISOString(),
                         authMethod: 'social',
-                        region: 'us-east-1'
+                        region: arnRegionMatch?.[1] || 'us-east-1'
                     };
                     
                     await fs.promises.mkdir(path.dirname(credPath), { recursive: true });
@@ -772,6 +776,9 @@ async function refreshKiroToken(refreshToken, region = KIRO_REFRESH_CONSTANTS.DE
         const expiresIn = data.expiresIn || 3600;
         const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
         
+        const arnRegionMatch = typeof data.profileArn === 'string'
+            ? data.profileArn.match(/^arn:aws:codewhisperer:([a-z0-9-]+):/i)
+            : null;
         return {
             accessToken: data.accessToken,
             refreshToken: data.refreshToken || refreshToken,
@@ -779,7 +786,7 @@ async function refreshKiroToken(refreshToken, region = KIRO_REFRESH_CONSTANTS.DE
             expiresAt: expiresAt,
             authMethod: KIRO_REFRESH_CONSTANTS.AUTH_METHOD_SOCIAL,
             provider: KIRO_REFRESH_CONSTANTS.DEFAULT_PROVIDER,
-            region: region
+            region: arnRegionMatch?.[1] || region
         };
     } catch (error) {
         clearTimeout(timeoutId);

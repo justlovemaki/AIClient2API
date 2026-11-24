@@ -89,13 +89,21 @@ const ANTIGRAVITY_CLIENT_TO_UPSTREAM_MODEL = {
 
 const ANTIGRAVITY_CLIENT_MODEL_THINKING_LEVEL = {
     'gemini-4-argon': 'medium',
+    'gemini-4-argon-low': 'low',
     'gemini-4-argon-high': 'high',
     'gemini-4-carbon': 'medium',
+    'gemini-4-carbon-low': 'low',
     'gemini-4-carbon-high': 'high',
     'gemini-4-hydrogen': 'medium',
+    'gemini-4-hydrogen-low': 'low',
     'gemini-4-hydrogen-high': 'high',
+    'gemini-4-hydrogen-xhigh': 'xhigh',
+    'gemini-4-hydrogen-tiered-high': 'high',
+    'gemini-4-hydrogen-tiered-xhigh': 'xhigh',
     'gemini-4-neon': 'medium',
+    'gemini-4-neon-low': 'low',
     'gemini-4-neon-high': 'high',
+    'gemini-4-neon-xhigh': 'xhigh',
     'gemini-pro-agent': 'high',
     'gemini-3.1-pro-high': 'high',
     'gemini-3.1-pro-preview': 'high',
@@ -117,10 +125,16 @@ const ANTIGRAVITY_CLIENT_MODEL_THINKING_LEVEL = {
 };
 
 const ANTIGRAVITY_MODEL_METADATA = {
+    'gemini-4-argon-low': {
+        thinking: { levels: ['low', 'medium', 'high'] }
+    },
     'gemini-4-argon-medium': {
         thinking: { levels: ['low', 'medium', 'high'] }
     },
     'gemini-4-argon-high': {
+        thinking: { levels: ['low', 'medium', 'high'] }
+    },
+    'gemini-4-carbon-low': {
         thinking: { levels: ['low', 'medium', 'high'] }
     },
     'gemini-4-carbon-medium': {
@@ -129,23 +143,68 @@ const ANTIGRAVITY_MODEL_METADATA = {
     'gemini-4-carbon-high': {
         thinking: { levels: ['low', 'medium', 'high'] }
     },
+    'gemini-4-hydrogen-low': {
+        thinking: { levels: ['low', 'medium', 'high', 'xhigh'] }
+    },
     'gemini-4-hydrogen-medium': {
-        thinking: { levels: ['low', 'medium', 'high'] }
+        thinking: { levels: ['low', 'medium', 'high', 'xhigh'] }
     },
     'gemini-4-hydrogen-high': {
-        thinking: { levels: ['low', 'medium', 'high'] }
+        thinking: { levels: ['low', 'medium', 'high', 'xhigh'] }
+    },
+    'gemini-4-hydrogen-xhigh': {
+        thinking: { levels: ['low', 'medium', 'high', 'xhigh'] }
+    },
+    'gemini-4-hydrogen-sonar': {
+        thinking: { levels: ['low', 'medium', 'high', 'xhigh'] }
+    },
+    'gemini-4-hydrogen-tiered-high': {
+        thinking: { levels: ['low', 'medium', 'high', 'xhigh'] }
+    },
+    'gemini-4-hydrogen-tiered-xhigh': {
+        thinking: { levels: ['low', 'medium', 'high', 'xhigh'] }
+    },
+    'gemini-4-neon-low': {
+        thinking: { levels: ['low', 'medium', 'high', 'xhigh'] }
     },
     'gemini-4-neon-medium': {
-        thinking: { levels: ['low', 'medium', 'high'] }
+        thinking: { levels: ['low', 'medium', 'high', 'xhigh'] }
     },
     'gemini-4-neon-high': {
-        thinking: { levels: ['low', 'medium', 'high'] }
+        thinking: { levels: ['low', 'medium', 'high', 'xhigh'] }
+    },
+    'gemini-4-neon-xhigh': {
+        thinking: { levels: ['low', 'medium', 'high', 'xhigh'] }
     },
     'claude-opus-4-6-thinking': {
         maxOutputTokens: 64000,
         thinking: { min: 1024, max: 64000, zeroAllowed: true, dynamicAllowed: true }
     },
     'claude-sonnet-4-6': {
+        maxOutputTokens: 64000,
+        thinking: { min: 1024, max: 64000, zeroAllowed: true, dynamicAllowed: true }
+    },
+    'claude-opus-5-5-low': {
+        maxOutputTokens: 64000,
+        thinking: { min: 1024, max: 64000, zeroAllowed: true, dynamicAllowed: true }
+    },
+    'claude-opus-5-5-medium': {
+        maxOutputTokens: 64000,
+        thinking: { min: 1024, max: 64000, zeroAllowed: true, dynamicAllowed: true }
+    },
+    'claude-opus-5-5-high': {
+        maxOutputTokens: 64000,
+        thinking: { min: 1024, max: 64000, zeroAllowed: true, dynamicAllowed: true }
+    },
+    'claude-sonnet-5-5-low': {
+        maxOutputTokens: 64000,
+        thinking: { min: 1024, max: 64000, zeroAllowed: true, dynamicAllowed: true }
+    },
+    'claude-sonnet-5-5-medium': {
+        maxOutputTokens: 64000,
+        thinking: { min: 1024, max: 64000, zeroAllowed: true, dynamicAllowed: true }
+    },
+    'claude-sonnet-5-5-high': {
         maxOutputTokens: 64000,
         thinking: { min: 1024, max: 64000, zeroAllowed: true, dynamicAllowed: true }
     },
@@ -180,6 +239,10 @@ const ANTIGRAVITY_MODEL_METADATA = {
         maxOutputTokens: 32768
     },
     'gemini-3.1-flash-lite': {
+        maxOutputTokens: 65535,
+        thinking: { min: 1, max: 65535, zeroAllowed: true, dynamicAllowed: true, levels: ['minimal', 'low', 'medium', 'high'] }
+    },
+    'gemini-3.5-flash-lite': {
         maxOutputTokens: 65535,
         thinking: { min: 1, max: 65535, zeroAllowed: true, dynamicAllowed: true, levels: ['minimal', 'low', 'medium', 'high'] }
     },
@@ -222,6 +285,14 @@ const ANTIGRAVITY_MODEL_METADATA = {
     'gemini-3.8-flash-high': {
         maxOutputTokens: 65535,
         thinking: { min: 1, max: 65535, dynamicAllowed: true, levels: ['low', 'medium', 'high'] }
+    },
+    'gemini-3.8-flash-tiered': {
+        maxOutputTokens: 65535,
+        thinking: { min: 1, max: 65535, dynamicAllowed: true, levels: ['low', 'medium', 'high'] }
+    },
+    'gemini-2.5-pro': {
+        maxOutputTokens: 65535,
+        thinking: { min: 128, max: 32768, dynamicAllowed: true }
     }
 };
 
@@ -296,7 +367,43 @@ export function expandAntigravityClientModels(upstreamModel, { includeUnlisted =
 
 function getAntigravityModelMetadata(modelName) {
     const upstreamModel = resolveAntigravityUpstreamModel(modelName);
-    return ANTIGRAVITY_MODEL_METADATA[upstreamModel] || ANTIGRAVITY_MODEL_METADATA[stripModelSuffix(modelName)] || null;
+    const exact = ANTIGRAVITY_MODEL_METADATA[upstreamModel] || ANTIGRAVITY_MODEL_METADATA[stripModelSuffix(modelName)];
+    if (exact) return exact;
+
+    const normalized = (upstreamModel || stripModelSuffix(modelName)).toLowerCase();
+    if (!normalized) return null;
+
+    if (normalized.startsWith('claude-')) {
+        return {
+            maxOutputTokens: 64000,
+            thinking: { min: 1024, max: 64000, zeroAllowed: true, dynamicAllowed: true }
+        };
+    }
+
+    if (/^gemini-4-/.test(normalized)) {
+        const levels = /(hydrogen|neon)/.test(normalized)
+            ? ['low', 'medium', 'high', 'xhigh']
+            : ['low', 'medium', 'high'];
+        return {
+            thinking: { levels }
+        };
+    }
+
+    if (/^gemini-3(\.\d+)?-flash/.test(normalized)) {
+        return {
+            maxOutputTokens: 65535,
+            thinking: { min: 1, max: 65535, dynamicAllowed: true, levels: ['low', 'medium', 'high'] }
+        };
+    }
+
+    if (/^gemini-2\.5-/.test(normalized)) {
+        return {
+            maxOutputTokens: 65535,
+            thinking: { min: 128, max: 32768, dynamicAllowed: true }
+        };
+    }
+
+    return null;
 }
 
 function isKnownAntigravityModel(modelName) {
@@ -337,7 +444,16 @@ function normalizeAntigravityTextParts(parts) {
 
 function getAntigravityClientModelThinkingLevel(modelName) {
     const baseModel = stripModelSuffix(modelName);
-    return ANTIGRAVITY_CLIENT_MODEL_THINKING_LEVEL[baseModel] || '';
+    if (ANTIGRAVITY_CLIENT_MODEL_THINKING_LEVEL[baseModel]) {
+        return ANTIGRAVITY_CLIENT_MODEL_THINKING_LEVEL[baseModel];
+    }
+    if (/^gemini-(3(\.\d+)?|4)-/.test(baseModel)) {
+        if (baseModel.endsWith('-xhigh')) return 'xhigh';
+        if (baseModel.endsWith('-high')) return 'high';
+        if (baseModel.endsWith('-medium')) return 'medium';
+        if (baseModel.endsWith('-low')) return 'low';
+    }
+    return '';
 }
 
 function applyAntigravityThinkingLevelConfig(thinkingConfig, level) {
@@ -1563,7 +1679,7 @@ export class AntigravityApiService {
                     const models = Object.keys(res.data.models);
                     const seenModels = new Set();
                     this.availableModels = models
-                        .flatMap(modelId => expandAntigravityClientModels(modelId))
+                        .flatMap(modelId => expandAntigravityClientModels(modelId, { includeUnlisted: true }))
                         .filter(modelId => {
                             if (!modelId || seenModels.has(modelId)) return false;
                             seenModels.add(modelId);
