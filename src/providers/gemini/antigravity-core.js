@@ -1157,10 +1157,17 @@ async function* normalizeAntigravityContentStream(stream, normalizeResponse = to
         const context = text
             ? `Upstream response (may be partial): ${contextTruncated ? '…' : ''}${text}\n`
             : 'No upstream explanation was provided. ';
-        throw createAntigravityResponseError(
+        const err = createAntigravityResponseError(
             `${context}Stream diagnostic: upstream ended without a completion reason (finishReason); the response is incomplete.`,
             'INCOMPLETE_UPSTREAM_STREAM'
         );
+        // 若流在未产出任何正文前截断（例如只有 thoughtSignature 就 EOF），允许上层按
+        // 响应失败小额重试（且不计入凭证错误）；若已输出正文，handleStreamRequest 会因
+        // anyDataSent === true 直接下发流式 error 而不会重试。
+        err.isRetryableUpstreamResponseFailure = true;
+        err.responseFailureLabel = 'incomplete upstream stream';
+        err.shouldSwitchCredential = true;
+        throw err;
     }
 }
 

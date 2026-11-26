@@ -2,8 +2,12 @@ import { API_ACTIONS, extractSystemPromptFromRequestBody, MODEL_PROTOCOL_PREFIX 
 import logger from '../../utils/logger.js';
 import { ProviderStrategy } from '../../utils/provider-strategy.js';
 
-const GEMINI_FINISH_REASON = Object.freeze({
-    MALFORMED_FUNCTION_CALL: 'MALFORMED_FUNCTION_CALL'
+const GEMINI_RETRYABLE_FINISH_REASONS = Object.freeze({
+    MALFORMED_FUNCTION_CALL: 'Gemini produced an invalid function call.',
+    UNEXPECTED_TOOL_CALL: 'Gemini attempted an unexpected tool call.',
+    MALFORMED_RESPONSE: 'Gemini produced a malformed response.',
+    TOO_MANY_TOOL_CALLS: 'Gemini exceeded the tool call limit.',
+    MISSING_THOUGHT_SIGNATURE: 'Gemini ended due to a missing thought signature.'
 });
 
 /**
@@ -36,13 +40,14 @@ class GeminiStrategy extends ProviderStrategy {
         if (!Array.isArray(candidates)) return null;
 
         const candidate = candidates.find(item =>
-            item?.finishReason === GEMINI_FINISH_REASON.MALFORMED_FUNCTION_CALL
+            typeof item?.finishReason === 'string' &&
+            Object.prototype.hasOwnProperty.call(GEMINI_RETRYABLE_FINISH_REASONS, item.finishReason)
         );
         if (!candidate) return null;
 
         return {
-            code: GEMINI_FINISH_REASON.MALFORMED_FUNCTION_CALL,
-            message: candidate.finishMessage || 'Gemini produced an invalid function call.',
+            code: candidate.finishReason,
+            message: candidate.finishMessage || GEMINI_RETRYABLE_FINISH_REASONS[candidate.finishReason],
             retryable: true,
             retryCategory: 'empty_output',
             skipErrorCount: true,

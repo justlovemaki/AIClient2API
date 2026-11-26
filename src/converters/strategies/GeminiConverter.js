@@ -30,6 +30,17 @@ import {
     streamStateManager
 } from '../../providers/openai/openai-responses-core.mjs';
 
+const GEMINI_ABORT_FINISH_REASONS = new Set([
+    'MALFORMED_FUNCTION_CALL',
+    'UNEXPECTED_TOOL_CALL',
+    'MALFORMED_RESPONSE',
+    'TOO_MANY_TOOL_CALLS',
+    'MISSING_THOUGHT_SIGNATURE'
+]);
+
+const isGeminiAbortFinishReason = (finishReason) =>
+    typeof finishReason === 'string' && GEMINI_ABORT_FINISH_REASONS.has(finishReason);
+
 /**
  * 修复 Gemini 返回的工具参数名称问题
  * Gemini 有时会使用不同的参数名称，需要映射到 Claude Code 期望的格式
@@ -422,10 +433,6 @@ export class GeminiConverter extends BaseConverter {
         let content = '';
         let reasoning_content = '';
         const toolCalls = [];
-        // 本 chunk 是否携带了可识别的 part（含仅有 thoughtSignature 的 part）。
-        // Gemini 3 系列会先回传只带 thoughtSignature、不带 text 的 part，若把这种 chunk 整体丢弃，
-        // 当整个流只由这类 part 组成时下游会收到 0 个 chunk（LangChain 报 "No generations found in stream."）。
-        let sawPart = false;
 
         // 从parts中提取文本和tool calls
         const parts = candidate.content?.parts;
@@ -433,7 +440,6 @@ export class GeminiConverter extends BaseConverter {
             for (const part of parts) {
                 // 用 typeof 判断而非 truthiness，避免 text 为空串时被跳过
                 if (typeof part.text === 'string') {
-                    sawPart = true;
                     if (part.thought === true) {
                         reasoning_content += part.text;
                     } else {
@@ -441,7 +447,6 @@ export class GeminiConverter extends BaseConverter {
                     }
                 }
                 if (part.functionCall) {
-                    sawPart = true;
                     toolCalls.push({
                         index: streamState.toolCallIndex++,
                         id: part.functionCall.id || `call_${uuidv4()}`,
@@ -454,10 +459,7 @@ export class GeminiConverter extends BaseConverter {
                         }
                     });
                 }
-                // thoughtSignature 本身不透传给客户端（Gemini 内部数据），但要记为“收到过 part”
-                if (part.thoughtSignature || part.thought_signature) {
-                    sawPart = true;
-                }
+                // thoughtSignature 本身不透传给客户端（Gemini 内部数据）
             }
         }
 
@@ -478,10 +480,13 @@ export class GeminiConverter extends BaseConverter {
                 'BLOCKLIST': 'content_filter',
                 'PROHIBITED_CONTENT': 'content_filter',
                 'SPII': 'content_filter',
-                'MALFORMED_FUNCTION_CALL': 'stop',
                 'MODEL_ARMOR': 'content_filter',
             };
-            finishReason = finishReasonMap[candidate.finishReason] || 'stop';
+            if (isGeminiAbortFinishReason(candidate.finishReason)) {
+                finishReason = candidate.finishReason.toLowerCase();
+            } else {
+                finishReason = finishReasonMap[candidate.finishReason] || 'stop';
+            }
             // 工具调用数据块本身必须保持 finish_reason=null；只在原生终止块上报告 tool_calls。
             if (finishReason === 'stop' && streamState.sawToolCall) {
                 finishReason = 'tool_calls';
@@ -495,9 +500,9 @@ export class GeminiConverter extends BaseConverter {
         if (toolCalls.length > 0) delta.tool_calls = toolCalls;
 
         // Don't return empty delta chunks
-        // 例外：本 chunk 确实携带了 part（例如仅有 thoughtSignature）时，仍下发一个空 delta，
-        // 保证下游至少能收到一个 generation，不会把有效流误判为空流。
-        if (Object.keys(delta).length === 0 && !finishReason && !sawPart) {
+        // 没有可见 delta 且没有 finishReason 时（包括仅有 thoughtSignature 的中间块）直接忽略，
+        // 避免提前提交 SSE 响应头并锁死重试窗口；若正常终止（带 finishReason），则下发终止帧。
+        if (Object.keys(delta).length === 0 && !finishReason) {
             return null;
         }
 
@@ -751,7 +756,9 @@ export class GeminiConverter extends BaseConverter {
                     stopReason = 'other';
                     break;
                 default:
-                    stopReason = 'end_turn';
+                    stopReason = isGeminiAbortFinishReason(finishReason)
+                        ? finishReason.toLowerCase()
+                        : 'end_turn';
             }
         }
 
@@ -795,20 +802,22 @@ export class GeminiConverter extends BaseConverter {
                         
                         if (typeof part.text === 'string') {
                             if (part.thought === true) {
-                                // [FIX] 这是一个 thinking 块
-                                const thinkingResult = {
-                                    type: "content_block_delta",
-                                    index: 0,
-                                    delta: {
-                                        type: "thinking_delta",
-                                        thinking: part.text
-                                    }
-                                };
-                                results.push(thinkingResult);
+                                // [FIX] 这是一个 thinking 块（允许空 text 但携带签名的尾包下发 signature_delta，
+                                // 避免丢失加密签名；纯空串且无签名则忽略，防止提前提交 SSE 200 头）
+                                const rawSignature = part.thoughtSignature || part.thought_signature;
+                                if (part.text.length > 0) {
+                                    results.push({
+                                        type: "content_block_delta",
+                                        index: 0,
+                                        delta: {
+                                            type: "thinking_delta",
+                                            thinking: part.text
+                                        }
+                                    });
+                                }
                                 
                                 // 如果有签名，发送 signature_delta
                                 // [FIX] 同时检查 thoughtSignature 和 thought_signature
-                                const rawSignature = part.thoughtSignature || part.thought_signature;
                                 if (rawSignature) {
                                     let signature = rawSignature;
                                     try {
@@ -828,8 +837,8 @@ export class GeminiConverter extends BaseConverter {
                                         }
                                     });
                                 }
-                            } else {
-                                // 普通文本
+                            } else if (part.text.length > 0) {
+                                // 普通文本（空串不下发，避免在未产出正文前提前提交 200 SSE 头）
                                 results.push({
                                     type: "content_block_delta",
                                     index: 0,
@@ -1538,7 +1547,7 @@ export class GeminiConverter extends BaseConverter {
                 
                 // 提取文本内容
                 if (parts && Array.isArray(parts)) {
-                    const textParts = parts.filter(part => part && typeof part.text === 'string' && part.thought !== true);
+                    const textParts = parts.filter(part => part && typeof part.text === 'string' && part.text.length > 0 && part.thought !== true);
                     if (textParts.length > 0) {
                         const text = textParts.map(part => part.text).join('');
                         this._ensureOpenAIResponsesTextStarted(stateKey, state, events);
@@ -1546,7 +1555,7 @@ export class GeminiConverter extends BaseConverter {
                     }
 
                     // [FIX] 提取推理内容
-                    const thoughtParts = parts.filter(part => part && typeof part.text === 'string' && part.thought === true);
+                    const thoughtParts = parts.filter(part => part && typeof part.text === 'string' && part.text.length > 0 && part.thought === true);
                     if (thoughtParts.length > 0) {
                         const thoughtText = thoughtParts.map(part => part.text).join('');
                         this._ensureOpenAIResponsesStreamStarted(stateKey, state, events);
@@ -1583,7 +1592,7 @@ export class GeminiConverter extends BaseConverter {
                             generateOutputItemDone(stateKey)
                         );
                     }
-                    const completedEvent = generateResponseCompleted(stateKey, {
+                    const usagePayload = {
                         input_tokens: geminiChunk.usageMetadata?.promptTokenCount || 0,
                         input_tokens_details: {
                             cached_tokens: geminiChunk.usageMetadata?.cachedContentTokenCount || 0
@@ -1593,24 +1602,34 @@ export class GeminiConverter extends BaseConverter {
                             reasoning_tokens: geminiChunk.usageMetadata?.thoughtsTokenCount || 0
                         },
                         total_tokens: geminiChunk.usageMetadata?.totalTokenCount || 0
-                    });
-                    events.push(completedEvent);
+                    };
+                    if (isGeminiAbortFinishReason(candidate.finishReason)) {
+                        const coreState = streamStateManager.getOrCreateState(stateKey);
+                        events.push({
+                            type: 'response.failed',
+                            sequence_number: coreState.sequenceNumber++,
+                            response: {
+                                id: state.responseId,
+                                object: 'response',
+                                status: 'failed',
+                                model: model,
+                                error: {
+                                    code: candidate.finishReason,
+                                    message: candidate.finishMessage || `Upstream ended with ${candidate.finishReason}`
+                                },
+                                usage: usagePayload
+                            }
+                        });
+                    } else {
+                        const completedEvent = generateResponseCompleted(stateKey, usagePayload);
+                        events.push(completedEvent);
                     
-                    // 如果有 usage 信息，更新最后一个事件
-                    if (geminiChunk.usageMetadata && events.length > 0) {
-                        const lastEvent = events[events.length - 1];
-                        if (lastEvent.response) {
-                            lastEvent.response.usage = {
-                                input_tokens: geminiChunk.usageMetadata.promptTokenCount || 0,
-                                input_tokens_details: {
-                                    cached_tokens: geminiChunk.usageMetadata.cachedContentTokenCount || 0
-                                },
-                                output_tokens: geminiChunk.usageMetadata.candidatesTokenCount || 0,
-                                output_tokens_details: {
-                                    reasoning_tokens: geminiChunk.usageMetadata.thoughtsTokenCount || 0
-                                },
-                                total_tokens: geminiChunk.usageMetadata.totalTokenCount || 0
-                            };
+                        // 如果有 usage 信息，更新最后一个事件
+                        if (geminiChunk.usageMetadata && events.length > 0) {
+                            const lastEvent = events[events.length - 1];
+                            if (lastEvent.response) {
+                                lastEvent.response.usage = usagePayload;
+                            }
                         }
                     }
 

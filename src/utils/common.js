@@ -946,7 +946,7 @@ function throwIfUpstreamResponseFailed(response, provider, providerLabel = provi
  * @param {string} [failureLabel='upstream response failure'] - 归一化失败类型
  * @returns {Promise<{retry: boolean, result?: object, responseFailureRetry?: number}>}
  */
-async function resolveRetryableUpstreamResponse(CONFIG, model, attemptsMade, logPrefix, providerLabel = 'Upstream', failureLabel = 'upstream response failure') {
+async function resolveRetryableUpstreamResponse(CONFIG, model, attemptsMade, logPrefix, providerLabel = 'Upstream', failureLabel = 'upstream response failure', excludeUuids = []) {
     const retryMax = CONFIG?.EMPTY_RESPONSE_MAX_RETRIES ?? 2;
     const retryDelayMs = CONFIG?.EMPTY_RESPONSE_RETRY_DELAY_MS ?? 500;
 
@@ -963,7 +963,21 @@ async function resolveRetryableUpstreamResponse(CONFIG, model, attemptsMade, log
     try {
         // 动态导入以避免循环依赖
         const { getApiServiceWithFallback } = await import('../services/service-manager.js');
-        const result = await getApiServiceWithFallback(CONFIG, model, { acquireSlot: true });
+        const filteredExcludes = Array.isArray(excludeUuids) ? excludeUuids.filter(Boolean) : [];
+        let result = null;
+        if (filteredExcludes.length > 0) {
+            try {
+                result = await getApiServiceWithFallback(CONFIG, model, {
+                    acquireSlot: true,
+                    excludeUuids: filteredExcludes
+                });
+            } catch (excludeErr) {
+                logger.info(`${logPrefix} No alternate credential available outside failed list for ${failureLabel}; falling back to full pool.`);
+            }
+        }
+        if (!result || !result.service) {
+            result = await getApiServiceWithFallback(CONFIG, model, { acquireSlot: true });
+        }
 
         if (result && result.service) {
             logger.info(`${logPrefix} Retrying ${failureLabel} from ${providerLabel} with credential: ${result.uuid} (provider: ${result.actualProviderType})`);
@@ -984,6 +998,32 @@ export async function handleStreamRequest(res, service, model, requestBody, from
     let fullOldResponseJson = '';
     let responseClosed = false;
     let anyDataSent = retryContext?.anyDataSent || false; // 跟踪是否已向客户端发送过任何数据
+    const streamHeadersSent = retryContext?.streamHeadersSent || { value: Boolean(res?.headersSent) };
+    const ensureStreamHeaders = async () => {
+        if (streamHeadersSent.value || res.headersSent) {
+            streamHeadersSent.value = true;
+            return;
+        }
+        streamHeadersSent.value = true;
+        await handleUnifiedResponse(res, '', true);
+    };
+    const writeStreamTerminalError = async (err, fallbackStatus = 500) => {
+        if (clientDisconnected.value || res.writableEnded) return;
+        try {
+            if (!streamHeadersSent.value && !res.headersSent) {
+                const rawStatusCode = err?.status || err?.statusCode || err?.response?.status || err?.code || fallbackStatus;
+                const statusCode = ensureValidStatusCode(rawStatusCode);
+                const errorResponse = createErrorResponse(err, fromProvider);
+                await handleUnifiedResponse(res, JSON.stringify(errorResponse), false, statusCode);
+                return;
+            }
+            const errorPayload = createStreamErrorResponse(err, fromProvider, nextResponseSequenceNumberRef.value);
+            res.write(errorPayload);
+            res.end();
+        } catch (writeErr) {
+            logger.error('[Stream] Failed to write error response:', writeErr.message);
+        }
+    };
     
     // 重试上下文：包含 CONFIG 和重试计数
     // maxRetries: 凭证切换最大次数（跨凭证），默认 5 次
@@ -1021,14 +1061,9 @@ export async function handleStreamRequest(res, service, model, requestBody, from
         res.on('error', onClientError);
     }
 
-    // 只在首次请求时发送响应头，重试时跳过（响应头已发送）
-    if (!isRetry) {
-        await handleUnifiedResponse(res, '', true);
-    }
-
     let hasToolCall = false;
     let hasMessageStop = false; // 跟踪是否已经发送过结束标志（message_stop / done）
-    let nextResponseSequenceNumber = 0;
+    const nextResponseSequenceNumberRef = retryContext?.nextResponseSequenceNumberRef || { value: 0 };
     // finally 必须能访问这两个值：客户端 close、上游 throw 和无终止块 EOF 都要释放状态。
     // generateContentStream 初始化失败前 streamRequestId 仍为空，安全跳过清理。
     let needsConversion = false;
@@ -1368,6 +1403,7 @@ export async function handleStreamRequest(res, service, model, requestBody, from
                     // fullResponseJson += chunk.type+"\n";
                     if (!clientDisconnected.value && !res.writableEnded) {
                         try {
+                            await ensureStreamHeaders();
                             res.write(`event: ${chunk.type}\n`);
                             anyDataSent = true;
                         } catch (writeErr) {
@@ -1383,13 +1419,14 @@ export async function handleStreamRequest(res, service, model, requestBody, from
                 // fullResponseJson += JSON.stringify(chunk)+"\n\n";
                 if (!clientDisconnected.value && !res.writableEnded) {
                     try {
+                        await ensureStreamHeaders();
                         res.write(`data: ${JSON.stringify(chunk)}\n\n`);
                         anyDataSent = true;
                         if (clientProtocol === MODEL_PROTOCOL_PREFIX.OPENAI_RESPONSES) {
                             const sequence = chunk?.sequence_number;
-                            nextResponseSequenceNumber = Number.isInteger(sequence) && sequence >= 0
-                                ? Math.max(nextResponseSequenceNumber, sequence + 1)
-                                : nextResponseSequenceNumber + 1;
+                            nextResponseSequenceNumberRef.value = Number.isInteger(sequence) && sequence >= 0
+                                ? Math.max(nextResponseSequenceNumberRef.value, sequence + 1)
+                                : nextResponseSequenceNumberRef.value + 1;
                         }
                     } catch (writeErr) {
                         logger.error('[Stream] Failed to write data:', writeErr.message);
@@ -1432,15 +1469,7 @@ export async function handleStreamRequest(res, service, model, requestBody, from
         if (anyDataSent) {
             logger.info(`[Stream Retry] Cannot retry: data already sent to client`);
             // 直接发送错误并结束
-            const errorPayload = createStreamErrorResponse(error, fromProvider, nextResponseSequenceNumber);
-            if (!res.writableEnded) {
-                try {
-                    res.write(errorPayload);
-                    res.end();
-                } catch (writeErr) {
-                    logger.error('[Stream] Failed to write error response:', writeErr.message);
-                }
-            }
+            await writeStreamTerminalError(error, 502);
             responseClosed = true;
             return;
         }
@@ -1450,7 +1479,16 @@ export async function handleStreamRequest(res, service, model, requestBody, from
         if (error.isRetryableUpstreamResponseFailure || error.isEmptyUpstreamResponse) {
             const attemptsMade = retryContext?.responseFailureRetry ?? retryContext?.emptyResponseRetry ?? 0;
             const failureLabel = error.responseFailureLabel || 'upstream response failure';
-            const outcome = await resolveRetryableUpstreamResponse(CONFIG, model, attemptsMade, '[Stream Retry]', toProvider, failureLabel);
+            const failedResponseUuids = [...new Set([...(retryContext?.failedResponseUuids || []), pooluuid].filter(Boolean))];
+            const outcome = await resolveRetryableUpstreamResponse(
+                CONFIG,
+                model,
+                attemptsMade,
+                '[Stream Retry]',
+                toProvider,
+                failureLabel,
+                failedResponseUuids
+            );
 
             if (outcome.retry) {
                 const { result, responseFailureRetry } = outcome;
@@ -1460,8 +1498,11 @@ export async function handleStreamRequest(res, service, model, requestBody, from
                     currentRetry,
                     maxRetries,
                     responseFailureRetry,
+                    failedResponseUuids,
                     clientDisconnected,
                     anyDataSent,
+                    streamHeadersSent,
+                    nextResponseSequenceNumberRef,
                     claudeStreamState
                 };
 
@@ -1483,15 +1524,8 @@ export async function handleStreamRequest(res, service, model, requestBody, from
 
             const giveUpError = new Error(`${toProvider} upstream response failed with ${failureLabel} after ${attemptsMade} retr${attemptsMade === 1 ? 'y' : 'ies'} using the same request. Please try again, or /clear your session if this keeps happening.`);
             giveUpError.status = 502;
-            const errorPayload = createStreamErrorResponse(giveUpError, fromProvider, nextResponseSequenceNumber);
-            if (!clientDisconnected.value && !res.writableEnded) {
-                try {
-                    res.write(errorPayload);
-                    res.end();
-                } catch (writeErr) {
-                    logger.error('[Stream] Failed to write error response:', writeErr.message);
-                }
-            }
+            giveUpError.responseFailureCode = error.responseFailureCode || 'UPSTREAM_RESPONSE_FAILURE';
+            await writeStreamTerminalError(giveUpError, 502);
             responseClosed = true;
             return;
         }
@@ -1569,6 +1603,8 @@ export async function handleStreamRequest(res, service, model, requestBody, from
                         maxRetries,
                         clientDisconnected,  // 传递断开状态
                         anyDataSent,         // 传递数据发送状态
+                        streamHeadersSent,   // 传递响应头发送状态
+                        nextResponseSequenceNumberRef,
                         claudeStreamState
                     };
                     
@@ -1595,16 +1631,8 @@ export async function handleStreamRequest(res, service, model, requestBody, from
             }
         }
 
-        // 使用新方法创建符合 fromProvider 格式的流式错误响应
-        const errorPayload = createStreamErrorResponse(error, fromProvider, nextResponseSequenceNumber);
-        if (!clientDisconnected.value && !res.writableEnded) {
-            try {
-                res.write(errorPayload);
-                res.end();
-            } catch (writeErr) {
-                logger.error('[Stream] Failed to write error response:', writeErr.message);
-            }
-        }
+        // 未提交 SSE 头时返回规范的 HTTP 状态码 + JSON 错误体；已提交则写 SSE error 帧。
+        await writeStreamTerminalError(error, 500);
         responseClosed = true;
     } finally {
         // 单例转换器中的 Gemini → OpenAI 状态不能只依赖上游 finishReason 清理。
@@ -1626,9 +1654,10 @@ export async function handleStreamRequest(res, service, model, requestBody, from
             res.off('error', onClientError);
         }
         
-        // 只在非重试或重试失败时才发送结束标记
-        // 如果是重试成功，递归调用会处理结束标记
-        if (!responseClosed && !clientDisconnected.value && !isRetry) {
+        // 只在非重试且已实际提交 SSE 流时才发送结束标记
+        // 如果重试在未发头阶段彻底失败，writeStreamTerminalError 已经通过 JSON 响应结束 res（res.writableEnded === true），
+        // 且 streamHeadersSent.value 为 false，绝不能再往未发头的响应里写 SSE [DONE]。
+        if (!responseClosed && !clientDisconnected.value && !isRetry && streamHeadersSent.value) {
             // 根据客户端协议发送相应的流式结束标记
             const clientProtocol = getProtocolPrefix(fromProvider);
             if (!res.writableEnded) {
@@ -1751,7 +1780,16 @@ export async function handleUnaryRequest(res, service, model, requestBody, fromP
         if (error.isRetryableUpstreamResponseFailure || error.isEmptyUpstreamResponse) {
             const attemptsMade = retryContext?.responseFailureRetry ?? retryContext?.emptyResponseRetry ?? 0;
             const failureLabel = error.responseFailureLabel || 'upstream response failure';
-            const outcome = await resolveRetryableUpstreamResponse(CONFIG, model, attemptsMade, '[Unary Retry]', toProvider, failureLabel);
+            const failedResponseUuids = [...new Set([...(retryContext?.failedResponseUuids || []), pooluuid].filter(Boolean))];
+            const outcome = await resolveRetryableUpstreamResponse(
+                CONFIG,
+                model,
+                attemptsMade,
+                '[Unary Retry]',
+                toProvider,
+                failureLabel,
+                failedResponseUuids
+            );
 
             if (outcome.retry) {
                 const { result, responseFailureRetry } = outcome;
@@ -1760,7 +1798,8 @@ export async function handleUnaryRequest(res, service, model, requestBody, fromP
                     CONFIG,
                     currentRetry,
                     maxRetries,
-                    responseFailureRetry
+                    responseFailureRetry,
+                    failedResponseUuids
                 };
 
                 return await handleUnaryRequest(
@@ -1781,6 +1820,7 @@ export async function handleUnaryRequest(res, service, model, requestBody, fromP
 
             const giveUpError = new Error(`${toProvider} upstream response failed with ${failureLabel} after ${attemptsMade} retr${attemptsMade === 1 ? 'y' : 'ies'} using the same request. Please try again, or /clear your session if this keeps happening.`);
             giveUpError.status = 502;
+            giveUpError.responseFailureCode = error.responseFailureCode || 'UPSTREAM_RESPONSE_FAILURE';
             const errorResponse = createErrorResponse(giveUpError, fromProvider);
             await handleUnifiedResponse(res, JSON.stringify(errorResponse), false, 502);
             return;

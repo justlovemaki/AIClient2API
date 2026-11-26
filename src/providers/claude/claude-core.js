@@ -1,3 +1,4 @@
+import { StringDecoder } from 'node:string_decoder';
 import axios from 'axios';
 import logger from '../../utils/logger.js';
 import * as http from 'http';
@@ -142,10 +143,11 @@ export class ClaudeApiService {
             this._applySidecar(axiosConfig);
             const response = await this.client.request(axiosConfig);
             const reader = response.data;
+            const decoder = new StringDecoder('utf8');
             let buffer = '';
 
             for await (const chunk of reader) {
-                buffer += chunk.toString('utf-8');
+                buffer += decoder.write(chunk);
                 let boundary;
                 while ((boundary = buffer.indexOf('\n\n')) !== -1) {
                     const eventBlock = buffer.substring(0, boundary);
@@ -169,6 +171,25 @@ export class ClaudeApiService {
                         } catch (e) {
                             logger.warn("[ClaudeApiService] Failed to parse stream chunk JSON:", e.message, "Data:", data);
                         }
+                    }
+                }
+            }
+
+            buffer += decoder.end();
+            if (buffer.trim()) {
+                const lines = buffer.split('\n');
+                let data = '';
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        data = line.substring(6).trim();
+                    }
+                }
+                if (data) {
+                    try {
+                        const parsedChunk = JSON.parse(data);
+                        yield parsedChunk;
+                    } catch (e) {
+                        logger.warn("[ClaudeApiService] Failed to parse trailing stream chunk JSON:", e.message, "Data:", data);
                     }
                 }
             }
